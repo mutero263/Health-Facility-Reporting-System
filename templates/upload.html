@@ -150,7 +150,6 @@
 <select class="form-select" id="facility-select" required>
 <option value="">Choose a facility...</option>
 {% for facility in facilities %}
-<!-- ✅ Fixed: Removed user.facility_id check since no login -->
 <option value="{{ facility.id }}">{{ facility.name }} - {{ facility.district }}</option>
 {% endfor %}
 </select>
@@ -185,7 +184,6 @@
 <!-- Report Date -->
 <div class="form-group">
 <label class="form-label"><i class="fas fa-calendar-day"></i> Report Date (optional)</label>
-<!-- ✅ FIXED: Changed now().strftime to now.strftime -->
 <input type="date" class="form-control" id="report-date" value="{{ now.strftime('%Y-%m-%d') }}">
 </div>
 
@@ -196,13 +194,13 @@
 </div>
 </div>
 
-<!-- Step 2: Data Entry (Simplified for brevity, logic remains same) -->
+<!-- Step 2: Data Entry (Simplified) -->
 <div class="step-content" id="step2-content" style="display: none;">
 <div class="card">
 <div class="card-header"><h3 class="card-title">Data Entry</h3></div>
 <div class="card-body">
 <p class="text-muted">Select your upload method in Step 1 to proceed.</p>
-<!-- Note: Full manual entry form code omitted for brevity, but ensure no 'user' variables are used -->
+<!-- Full manual entry form would go here -->
 </div>
 </div>
 <div class="d-flex justify-content-between mt-4">
@@ -275,29 +273,35 @@ document.getElementById(`step${currentStep}`).classList.remove('completed');
 }
 }
 
+// ✅ FIXED: This function now enables/disables the button instantly
 function validateStep1() {
 const facility = document.getElementById('facility-select').value;
 const week = document.getElementById('week-select').value;
 const year = document.getElementById('year-select').value;
-if (!facility || !week || !year) {
-showNotification('Please select facility, week, and year', 'warning');
+const nextBtn = document.getElementById('step1-next');
+
+// Enable button only if all fields are filled
+if (facility && week && year) {
+nextBtn.disabled = false;
+return true;
+} else {
+nextBtn.disabled = true;
 return false;
 }
-return true;
 }
 
 function selectMethod(method) {
 selectedMethod = method;
 document.querySelectorAll('.format-option').forEach(opt => opt.classList.remove('selected'));
 document.getElementById(`method-${method}`).classList.add('selected');
-document.getElementById('step1-next').disabled = false;
+// Also enable next button if method is selected (optional logic)
+// validateStep1(); 
 }
 
 function showTemplates() { document.getElementById('template-modal').classList.add('active'); }
 function hideTemplates() { document.getElementById('template-modal').classList.remove('active'); }
 
 function submitReport() {
-// Simplified submission for demo
 const formData = new FormData();
 formData.append('facility_id', document.getElementById('facility-select').value);
 formData.append('week', document.getElementById('week-select').value);
@@ -311,9 +315,21 @@ setTimeout(() => { window.location.href = '/dashboard'; }, 2000);
 }, 1000);
 }
 
-// Initialize
+// ✅ FIXED: Add Event Listeners to auto-validate when selections change
 document.addEventListener('DOMContentLoaded', function() {
 selectMethod('file');
+
+const facilitySelect = document.getElementById('facility-select');
+const weekSelect = document.getElementById('week-select');
+const yearSelect = document.getElementById('year-select');
+
+// Attach change events to enable/disable Next button instantly
+if(facilitySelect) facilitySelect.addEventListener('change', validateStep1);
+if(weekSelect) weekSelect.addEventListener('change', validateStep1);
+if(yearSelect) yearSelect.addEventListener('change', validateStep1);
+
+// Initial check in case values are pre-filled by browser
+validateStep1();
 });
 </script>
 {% endblock %}
