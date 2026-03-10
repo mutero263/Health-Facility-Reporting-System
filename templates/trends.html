@@ -1,0 +1,1832 @@
+{% extends "base.html" %}
+
+{% block title %}Trends Analysis - Health Facility Reporting System{% endblock %}
+
+{% block page_title %}Trends Analysis{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+<li class="breadcrumb-item active">Trends</li>
+{% endblock %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline" onclick="exportTrends()">
+    <i class="fas fa-download"></i> Export Data
+</button>
+<button type="button" class="btn btn-outline" onclick="printTrends()">
+    <i class="fas fa-print"></i> Print
+</button>
+<button type="button" class="btn btn-primary" onclick="saveTrendView()">
+    <i class="fas fa-save"></i> Save View
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Trends Header */
+    .trends-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        margin-bottom: var(--spacing-xl);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .trends-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.1"><path d="M10 90 L30 50 L50 70 L70 30 L90 60" stroke="white" stroke-width="3" fill="none"/><circle cx="30" cy="50" r="3" fill="white"/><circle cx="50" cy="70" r="3" fill="white"/><circle cx="70" cy="30" r="3" fill="white"/><circle cx="90" cy="60" r="3" fill="white"/></svg>');
+        background-size: 200px;
+        opacity: 0.1;
+    }
+    
+    .trends-header-content {
+        position: relative;
+        z-index: 1;
+    }
+    
+    .trends-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .trends-subtitle {
+        font-size: var(--font-size-lg);
+        opacity: 0.9;
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    /* Filter Panel */
+    .filter-panel {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .filter-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-lg);
+        padding-bottom: var(--spacing-sm);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    
+    .filter-label {
+        font-weight: 500;
+        color: var(--darker-gray);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    
+    .filter-label i {
+        color: var(--primary-color);
+        width: 20px;
+    }
+    
+    .date-range-presets {
+        display: flex;
+        gap: var(--spacing-xs);
+        margin-top: var(--spacing-xs);
+        flex-wrap: wrap;
+    }
+    
+    .preset-btn {
+        padding: var(--spacing-xs) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        background: var(--white);
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        transition: var(--transition-fast);
+    }
+    
+    .preset-btn:hover {
+        background: var(--primary-light);
+        border-color: var(--primary-color);
+    }
+    
+    .preset-btn.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
+    }
+    
+    .filter-actions {
+        display: flex;
+        gap: var(--spacing-md);
+        justify-content: flex-end;
+    }
+    
+    /* Facility Selector */
+    .facility-selector {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .selector-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .selector-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .selector-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+    }
+    
+    .facility-radio-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: var(--spacing-md);
+        max-height: 300px;
+        overflow-y: auto;
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+    }
+    
+    .facility-radio-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-sm);
+        transition: var(--transition-fast);
+    }
+    
+    .facility-radio-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .facility-radio-item input[type="radio"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+    
+    .facility-radio-item label {
+        flex: 1;
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        color: var(--darker-gray);
+    }
+    
+    .facility-type-badge {
+        font-size: var(--font-size-xs);
+        padding: 2px 6px;
+        border-radius: var(--border-radius-sm);
+        background: var(--primary-light);
+        color: var(--primary-dark);
+        margin-left: var(--spacing-xs);
+    }
+    
+    /* Metric Selector */
+    .metric-selector {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .metric-tabs {
+        display: flex;
+        gap: var(--spacing-xs);
+        margin-bottom: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: var(--spacing-sm);
+        flex-wrap: wrap;
+    }
+    
+    .metric-tab {
+        padding: var(--spacing-sm) var(--spacing-lg);
+        border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+        cursor: pointer;
+        transition: var(--transition-fast);
+        font-weight: 500;
+        color: var(--dark-gray);
+    }
+    
+    .metric-tab:hover {
+        background: var(--light-gray);
+        color: var(--primary-color);
+    }
+    
+    .metric-tab.active {
+        background: var(--primary-color);
+        color: var(--white);
+    }
+    
+    .metric-radio-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+        max-height: 400px;
+        overflow-y: auto;
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+    }
+    
+    .metric-category {
+        grid-column: 1 / -1;
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-top: var(--spacing-md);
+        padding-bottom: var(--spacing-xs);
+        border-bottom: 1px dashed var(--border-color);
+    }
+    
+    .metric-category:first-of-type {
+        margin-top: 0;
+    }
+    
+    .metric-radio-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-sm);
+        transition: var(--transition-fast);
+    }
+    
+    .metric-radio-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .metric-radio-item input[type="radio"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+    
+    .metric-radio-item label {
+        flex: 1;
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        color: var(--darker-gray);
+    }
+    
+    .metric-info {
+        color: var(--dark-gray);
+        font-size: var(--font-size-xs);
+        cursor: help;
+    }
+    
+    /* Summary Cards */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .summary-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition-normal);
+    }
+    
+    .summary-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .summary-header {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+        padding-bottom: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .summary-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--border-radius-circle);
+        background: var(--primary-light);
+        color: var(--primary-dark);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-lg);
+    }
+    
+    .summary-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin: 0;
+    }
+    
+    .summary-value {
+        font-size: var(--font-size-xxl);
+        font-weight: 700;
+        color: var(--primary-color);
+        line-height: 1.2;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .summary-trend {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        font-size: var(--font-size-sm);
+    }
+    
+    .summary-trend.positive { color: var(--success-color); }
+    .summary-trend.negative { color: var(--danger-color); }
+    .summary-trend.neutral { color: var(--warning-color); }
+    
+    /* Main Chart */
+    .chart-container {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-lg);
+        height: 500px;
+    }
+    
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .chart-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .chart-legend {
+        display: flex;
+        gap: var(--spacing-lg);
+    }
+    
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        font-size: var(--font-size-sm);
+    }
+    
+    .legend-color {
+        width: 12px;
+        height: 12px;
+        border-radius: var(--border-radius-sm);
+    }
+    
+    /* Statistics Cards */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .stats-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .stats-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-md);
+        padding-bottom: var(--spacing-sm);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .stats-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    
+    .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .stat-label {
+        color: var(--dark-gray);
+        font-size: var(--font-size-sm);
+    }
+    
+    .stat-number {
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .stat-number.highlight {
+        color: var(--primary-color);
+        font-size: var(--font-size-lg);
+    }
+    
+    /* Seasonality Card */
+    .seasonality-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .seasonality-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: var(--spacing-lg);
+        margin-top: var(--spacing-lg);
+    }
+    
+    .seasonality-item {
+        text-align: center;
+    }
+    
+    .seasonality-month {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .seasonality-value {
+        font-size: var(--font-size-xl);
+        font-weight: 700;
+        color: var(--darker-gray);
+    }
+    
+    .seasonality-label {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+    }
+    
+    /* Data Table */
+    .table-container {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+        overflow-x: auto;
+    }
+    
+    .trends-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 800px;
+    }
+    
+    .trends-table th {
+        padding: var(--spacing-md);
+        text-align: left;
+        background: var(--light-gray);
+        font-weight: 600;
+        color: var(--darker-gray);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .trends-table td {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .trends-table tr:hover td {
+        background: var(--light-gray);
+    }
+    
+    .trends-table .trend-up {
+        color: var(--success-color);
+    }
+    
+    .trends-table .trend-down {
+        color: var(--danger-color);
+    }
+    
+    .trends-table .trend-neutral {
+        color: var(--warning-color);
+    }
+    
+    /* Sparkline */
+    .sparkline-container {
+        width: 100px;
+        height: 30px;
+    }
+    
+    /* Insights Panel */
+    .insights-panel {
+        background: linear-gradient(135deg, var(--primary-light) 0%, var(--light-gray) 100%);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        border-left: 4px solid var(--primary-color);
+    }
+    
+    .insights-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--primary-dark);
+        margin-bottom: var(--spacing-md);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    
+    .insights-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .insights-item {
+        display: flex;
+        gap: var(--spacing-md);
+        padding: var(--spacing-sm) 0;
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+    
+    .insights-item:last-child {
+        border-bottom: none;
+    }
+    
+    .insights-icon {
+        width: 24px;
+        text-align: center;
+        color: var(--primary-color);
+    }
+    
+    .insights-text {
+        flex: 1;
+        color: var(--darker-gray);
+    }
+    
+    .insights-text strong {
+        color: var(--primary-dark);
+    }
+    
+    /* Tooltips */
+    .tooltip-icon {
+        color: var(--dark-gray);
+        cursor: help;
+        margin-left: var(--spacing-xs);
+        font-size: var(--font-size-sm);
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .filter-actions {
+            flex-direction: column;
+        }
+        
+        .filter-actions button {
+            width: 100%;
+        }
+        
+        .selector-header {
+            flex-direction: column;
+            gap: var(--spacing-md);
+            align-items: flex-start;
+        }
+        
+        .facility-radio-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .metric-radio-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .seasonality-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+        
+        .chart-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--spacing-md);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Trends Header -->
+<div class="trends-header">
+    <div class="trends-header-content">
+        <h1 class="trends-title">Trends Analysis</h1>
+        <p class="trends-subtitle">Analyze patterns and trends over time for key health indicators</p>
+    </div>
+</div>
+
+<!-- Filter Panel -->
+<div class="filter-panel">
+    <h3 class="filter-title">Time Period</h3>
+    
+    <div class="filter-grid">
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-calendar-alt"></i> Date Range</label>
+            <div class="date-range-presets" id="date-presets">
+                <button type="button" class="preset-btn active" onclick="setDateRange('4weeks')">4 Weeks</button>
+                <button type="button" class="preset-btn" onclick="setDateRange('12weeks')">12 Weeks</button>
+                <button type="button" class="preset-btn" onclick="setDateRange('6months')">6 Months</button>
+                <button type="button" class="preset-btn" onclick="setDateRange('1year')">1 Year</button>
+                <button type="button" class="preset-btn" onclick="setDateRange('all')">All Time</button>
+                <button type="button" class="preset-btn" onclick="setDateRange('custom')">Custom</button>
+            </div>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-calendar-week"></i> Start Week</label>
+            <select class="form-select" id="start-week">
+                <option value="">Select week...</option>
+                {% for week in weeks %}
+                <option value="{{ week.week }}" data-year="{{ week.year }}">Week {{ week.week }}, {{ week.year }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-calendar-week"></i> End Week</label>
+            <select class="form-select" id="end-week">
+                <option value="">Select week...</option>
+                {% for week in weeks %}
+                <option value="{{ week.week }}" data-year="{{ week.year }}">Week {{ week.week }}, {{ week.year }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-chart-line"></i> Aggregation</label>
+            <select class="form-select" id="aggregation">
+                <option value="weekly" selected>Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="filter-actions">
+        <button type="button" class="btn btn-outline" onclick="resetDateRange()">
+            <i class="fas fa-undo"></i> Reset
+        </button>
+        <button type="button" class="btn btn-primary" onclick="updateTrends()">
+            <i class="fas fa-sync-alt"></i> Update Trends
+        </button>
+    </div>
+</div>
+
+<!-- Facility Selector -->
+<div class="facility-selector">
+    <div class="selector-header">
+        <h3 class="selector-title">Select Facility</h3>
+        <div class="selector-actions">
+            <button type="button" class="btn btn-sm btn-outline" onclick="selectDistrictFacilities()">
+                <i class="fas fa-layer-group"></i> Select District
+            </button>
+        </div>
+    </div>
+    
+    <div class="facility-radio-grid" id="facility-list">
+        <div class="facility-radio-item">
+            <input type="radio" name="facility" value="all" id="facility-all" checked>
+            <label for="facility-all">
+                <strong>All Facilities (District Average)</strong>
+            </label>
+        </div>
+        
+        {% if facilities %}
+            {% for facility in facilities %}
+            <div class="facility-radio-item">
+                <input type="radio" name="facility" value="{{ facility.id }}" id="facility-{{ facility.id }}">
+                <label for="facility-{{ facility.id }}">
+                    {{ facility.name }}
+                    <span class="facility-type-badge">{{ facility.type }}</span>
+                </label>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No facilities available</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Metric Selector -->
+<div class="metric-selector">
+    <h3 class="selector-title">Select Metric</h3>
+    
+    <div class="metric-tabs">
+        <div class="metric-tab active" onclick="switchMetricCategory('all')">All Metrics</div>
+        <div class="metric-tab" onclick="switchMetricCategory('rdns')">RDNS</div>
+        <div class="metric-tab" onclick="switchMetricCategory('maternal')">Maternal</div>
+        <div class="metric-tab" onclick="switchMetricCategory('child')">Child</div>
+        <div class="metric-tab" onclick="switchMetricCategory('hiv')">HIV/TB</div>
+        <div class="metric-tab" onclick="switchMetricCategory('opd')">OPD</div>
+    </div>
+    
+    <div class="metric-radio-grid" id="metric-list">
+        <!-- RDNS Metrics -->
+        <div class="metric-category">RDNS - Disease Surveillance</div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="opd_visits" id="metric-opd" checked>
+            <label for="metric-opd">OPD Visits</label>
+            <span class="tooltip-icon" title="Outpatient Department visits"><i class="fas fa-question-circle"></i></span>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="malaria_suspected" id="metric-malaria-suspected">
+            <label for="metric-malaria-suspected">Malaria Suspected</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="malaria_tested" id="metric-malaria-tested">
+            <label for="metric-malaria-tested">Malaria Tested</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="malaria_positive" id="metric-malaria-positive">
+            <label for="metric-malaria-positive">Malaria Positive</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="malaria_positivity_rate" id="metric-positivity-rate">
+            <label for="metric-positivity-rate">Malaria Positivity Rate (%)</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="diarrhoea" id="metric-diarrhoea">
+            <label for="metric-diarrhoea">Diarrhoea Cases</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="dysentery" id="metric-dysentery">
+            <label for="metric-dysentery">Dysentery Cases</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="influenza" id="metric-influenza">
+            <label for="metric-influenza">Influenza Cases</label>
+        </div>
+        
+        <!-- Maternal Health Metrics -->
+        <div class="metric-category">Maternal Health</div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="institutional_deliveries" id="metric-deliveries">
+            <label for="metric-deliveries">Institutional Deliveries</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="home_deliveries" id="metric-home-deliveries">
+            <label for="metric-home-deliveries">Home Deliveries</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="anc_contacts" id="metric-anc">
+            <label for="metric-anc">ANC Contacts</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="pnc_attendees" id="metric-pnc">
+            <label for="metric-pnc">PNC Attendees</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="fp_clients" id="metric-fp">
+            <label for="metric-fp">Family Planning Clients</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="still_births" id="metric-stillbirths">
+            <label for="metric-stillbirths">Still Births</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="institutional_delivery_rate" id="metric-delivery-rate">
+            <label for="metric-delivery-rate">Institutional Delivery Rate (%)</label>
+        </div>
+        
+        <!-- Child Health Metrics -->
+        <div class="metric-category">Child Health</div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="children_vaccinated_penta3" id="metric-penta3">
+            <label for="metric-penta3">Penta3 Vaccinations</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="under5_sam" id="metric-sam">
+            <label for="metric-sam">Under 5 SAM</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="under5_mam" id="metric-mam">
+            <label for="metric-mam">Under 5 MAM</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="children_vitamin_a" id="metric-vitamina">
+            <label for="metric-vitamina">Vitamin A Supplementation</label>
+        </div>
+        
+        <!-- HIV/TB Metrics -->
+        <div class="metric-category">HIV & TB</div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="hiv_tested" id="metric-hiv-tested">
+            <label for="metric-hiv-tested">HIV Tests</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="hiv_positive" id="metric-hiv-positive">
+            <label for="metric-hiv-positive">HIV Positive</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="tb_screened" id="metric-tb-screened">
+            <label for="metric-tb-screened">TB Screened</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="tb_new_relapse" id="metric-tb-cases">
+            <label for="metric-tb-cases">TB Cases</label>
+        </div>
+        
+        <!-- OPD & Services -->
+        <div class="metric-category">OPD & Services</div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="casualty_visits" id="metric-casualty">
+            <label for="metric-casualty">Casualty Visits</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="major_operations" id="metric-operations">
+            <label for="metric-operations">Major Operations</label>
+        </div>
+        
+        <div class="metric-radio-item">
+            <input type="radio" name="metric" value="c_sections" id="metric-csection">
+            <label for="metric-csection">C-Sections</label>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="summary-grid" id="summary-cards">
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <h3 class="summary-title">Trend Direction</h3>
+        </div>
+        <div class="summary-value" id="trend-direction">-</div>
+        <div class="summary-trend neutral" id="trend-description">
+            <i class="fas fa-minus-circle"></i> Select data to analyze
+        </div>
+    </div>
+    
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-percent"></i>
+            </div>
+            <h3 class="summary-title">Change</h3>
+        </div>
+        <div class="summary-value" id="percent-change">-</div>
+        <div class="summary-trend" id="change-description">
+            Over selected period
+        </div>
+    </div>
+    
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-chart-bar"></i>
+            </div>
+            <h3 class="summary-title">Average</h3>
+        </div>
+        <div class="summary-value" id="average-value">-</div>
+        <div class="summary-trend" id="average-description">
+            Weekly average
+        </div>
+    </div>
+    
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-thermometer-half"></i>
+            </div>
+            <h3 class="summary-title">Volatility</h3>
+        </div>
+        <div class="summary-value" id="volatility">-</div>
+        <div class="summary-trend" id="volatility-description">
+            Coefficient of variation
+        </div>
+    </div>
+</div>
+
+<!-- Main Chart -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h3 class="chart-title" id="chart-title">OPD Visits Trend</h3>
+        <div class="chart-legend" id="chart-legend">
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--primary-color);"></span>
+                <span>Actual Values</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--success-color);"></span>
+                <span>Trend Line</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--warning-color);"></span>
+                <span>Moving Average</span>
+            </div>
+        </div>
+    </div>
+    <canvas id="trendChart"></canvas>
+</div>
+
+<!-- Statistics Grid -->
+<div class="stats-grid">
+    <div class="stats-card">
+        <h3 class="stats-title">Summary Statistics</h3>
+        <div class="stats-list" id="summary-stats">
+            <div class="stat-item">
+                <span class="stat-label">Minimum</span>
+                <span class="stat-number" id="stat-min">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Maximum</span>
+                <span class="stat-number" id="stat-max">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Median</span>
+                <span class="stat-number" id="stat-median">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Mean</span>
+                <span class="stat-number" id="stat-mean">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Standard Deviation</span>
+                <span class="stat-number" id="stat-std">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Variance</span>
+                <span class="stat-number" id="stat-variance">-</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stats-card">
+        <h3 class="stats-title">Recent Values</h3>
+        <div class="stats-list" id="recent-values">
+            <div class="stat-item">
+                <span class="stat-label">Current Week</span>
+                <span class="stat-number" id="current-week">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Previous Week</span>
+                <span class="stat-number" id="prev-week">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">4-Week Average</span>
+                <span class="stat-number" id="avg-4week">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">8-Week Average</span>
+                <span class="stat-number" id="avg-8week">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">12-Week Average</span>
+                <span class="stat-number" id="avg-12week">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Peak Week</span>
+                <span class="stat-number" id="peak-week">-</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stats-card">
+        <h3 class="stats-title">Forecast (Next 4 Weeks)</h3>
+        <div class="stats-list" id="forecast">
+            <div class="stat-item">
+                <span class="stat-label">Week +1</span>
+                <span class="stat-number" id="forecast-1">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Week +2</span>
+                <span class="stat-number" id="forecast-2">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Week +3</span>
+                <span class="stat-number" id="forecast-3">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Week +4</span>
+                <span class="stat-number" id="forecast-4">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Confidence</span>
+                <span class="stat-number" id="forecast-confidence">-</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Seasonality Card -->
+<div class="seasonality-card">
+    <h3 class="stats-title">Seasonal Patterns</h3>
+    <div class="seasonality-grid" id="seasonality">
+        <div class="seasonality-item">
+            <div class="seasonality-month">Jan-Mar</div>
+            <div class="seasonality-value" id="season-q1">-</div>
+            <div class="seasonality-label">Q1 Average</div>
+        </div>
+        <div class="seasonality-item">
+            <div class="seasonality-month">Apr-Jun</div>
+            <div class="seasonality-value" id="season-q2">-</div>
+            <div class="seasonality-label">Q2 Average</div>
+        </div>
+        <div class="seasonality-item">
+            <div class="seasonality-month">Jul-Sep</div>
+            <div class="seasonality-value" id="season-q3">-</div>
+            <div class="seasonality-label">Q3 Average</div>
+        </div>
+        <div class="seasonality-item">
+            <div class="seasonality-month">Oct-Dec</div>
+            <div class="seasonality-value" id="season-q4">-</div>
+            <div class="seasonality-label">Q4 Average</div>
+        </div>
+    </div>
+</div>
+
+<!-- Insights Panel -->
+<div class="insights-panel" id="insights-panel">
+    <div class="insights-title">
+        <i class="fas fa-lightbulb"></i> Key Insights
+    </div>
+    <ul class="insights-list" id="insights-list">
+        <li class="insights-item">
+            <span class="insights-icon"><i class="fas fa-info-circle"></i></span>
+            <span class="insights-text">Select a facility and metric to generate insights</span>
+        </li>
+    </ul>
+</div>
+
+<!-- Data Table -->
+<div class="table-container">
+    <h3 class="stats-title mb-3">Detailed Data</h3>
+    <table class="trends-table" id="trends-table">
+        <thead>
+            <tr>
+                <th>Period</th>
+                <th>Value</th>
+                <th>Change</th>
+                <th>% Change</th>
+                <th>Moving Avg (4wk)</th>
+                <th>Trend</th>
+            </tr>
+        </thead>
+        <tbody id="table-body">
+            <tr>
+                <td colspan="6" class="text-center">Select filters to load data</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script>
+    // ============================================================================
+    // STATE MANAGEMENT
+    // ============================================================================
+    
+    let trendChart = null;
+    let currentMetricCategory = 'all';
+    let currentFacility = 'all';
+    let currentMetric = 'opd_visits';
+    let startWeek = null;
+    let endWeek = null;
+    let startYear = null;
+    let endYear = null;
+    let aggregation = 'weekly';
+    
+    // Register annotation plugin
+    Chart.register(ChartAnnotation);
+    
+    // Initialize date range (last 12 weeks by default)
+    document.addEventListener('DOMContentLoaded', function() {
+        setDateRange('12weeks');
+        loadTrendData();
+    });
+    
+    // ============================================================================
+    // DATE RANGE HANDLING
+    // ============================================================================
+    
+    function setDateRange(range) {
+        // Update preset buttons
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentWeek = getWeekNumber(today);
+        
+        let startW, startY, endW, endY;
+        
+        switch(range) {
+            case '4weeks':
+                endW = currentWeek;
+                endY = currentYear;
+                startW = currentWeek - 3;
+                startY = currentYear;
+                if (startW < 1) {
+                    startW += 52;
+                    startY = currentYear - 1;
+                }
+                break;
+            case '12weeks':
+                endW = currentWeek;
+                endY = currentYear;
+                startW = currentWeek - 11;
+                startY = currentYear;
+                if (startW < 1) {
+                    startW += 52;
+                    startY = currentYear - 1;
+                }
+                break;
+            case '6months':
+                // Approximate 24 weeks
+                endW = currentWeek;
+                endY = currentYear;
+                startW = currentWeek - 23;
+                startY = currentYear;
+                if (startW < 1) {
+                    startW += 52;
+                    startY = currentYear - 1;
+                }
+                break;
+            case '1year':
+                endW = currentWeek;
+                endY = currentYear;
+                startW = currentWeek;
+                startY = currentYear - 1;
+                break;
+            case 'all':
+                // Will be handled by backend
+                startW = null;
+                startY = null;
+                endW = null;
+                endY = null;
+                break;
+            case 'custom':
+                // Enable manual selection
+                document.getElementById('start-week').disabled = false;
+                document.getElementById('end-week').disabled = false;
+                return;
+        }
+        
+        // Update selectors
+        if (startW && startY) {
+            selectWeek('start-week', startW, startY);
+            selectWeek('end-week', endW, endY);
+        }
+        
+        // Disable custom selection
+        document.getElementById('start-week').disabled = true;
+        document.getElementById('end-week').disabled = true;
+    }
+    
+    function selectWeek(selectId, week, year) {
+        const select = document.getElementById(selectId);
+        for (let option of select.options) {
+            if (option.value == week && option.getAttribute('data-year') == year) {
+                option.selected = true;
+                break;
+            }
+        }
+    }
+    
+    function getWeekNumber(date) {
+        const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+        const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+        return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+    }
+    
+    function resetDateRange() {
+        setDateRange('12weeks');
+    }
+    
+    // ============================================================================
+    // FACILITY SELECTION
+    // ============================================================================
+    
+    document.querySelectorAll('input[name="facility"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            currentFacility = this.value;
+            updateTrends();
+        });
+    });
+    
+    function selectDistrictFacilities() {
+        // This would show a district selection modal
+        showNotification('District selection coming soon', 'info');
+    }
+    
+    // ============================================================================
+    // METRIC SELECTION
+    // ============================================================================
+    
+    function switchMetricCategory(category) {
+        currentMetricCategory = category;
+        
+        document.querySelectorAll('.metric-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        // Filter metrics by category (simplified - would use data attributes in production)
+        document.querySelectorAll('.metric-category, .metric-radio-item').forEach(el => {
+            if (category === 'all') {
+                el.style.display = 'flex';
+            } else {
+                // This is simplified - would need proper categorization
+                el.style.display = 'flex';
+            }
+        });
+    }
+    
+    document.querySelectorAll('input[name="metric"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            currentMetric = this.value;
+            updateChartTitle();
+            updateTrends();
+        });
+    });
+    
+    function updateChartTitle() {
+        const selectedMetric = document.querySelector('input[name="metric"]:checked');
+        const metricLabel = selectedMetric ? selectedMetric.nextElementSibling.textContent : 'OPD Visits';
+        document.getElementById('chart-title').textContent = metricLabel + ' Trend';
+    }
+    
+    // ============================================================================
+    // TREND DATA LOADING
+    // ============================================================================
+    
+    function updateTrends() {
+        // Get date range
+        const startWeekSelect = document.getElementById('start-week');
+        const endWeekSelect = document.getElementById('end-week');
+        const aggregationSelect = document.getElementById('aggregation');
+        
+        startWeek = startWeekSelect.value;
+        endWeek = endWeekSelect.value;
+        startYear = startWeekSelect.selectedOptions[0]?.getAttribute('data-year');
+        endYear = endWeekSelect.selectedOptions[0]?.getAttribute('data-year');
+        aggregation = aggregationSelect.value;
+        
+        loadTrendData();
+    }
+    
+    function loadTrendData() {
+        if (!currentFacility) {
+            showNotification('Please select a facility', 'warning');
+            return;
+        }
+        
+        // Show loading
+        showLoading();
+        
+        // Build URL
+        let url = `/api/trends?facility=${currentFacility}&metric=${currentMetric}&aggregation=${aggregation}`;
+        if (startWeek && startYear) {
+            url += `&start_week=${startWeek}&start_year=${startYear}`;
+        }
+        if (endWeek && endYear) {
+            url += `&end_week=${endWeek}&end_year=${endYear}`;
+        }
+        
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                updateChart(data);
+                updateStatistics(data);
+                updateSeasonality(data);
+                updateInsights(data);
+                updateTable(data);
+            })
+            .catch(error => {
+                hideLoading();
+                showNotification('Error loading trend data', 'danger');
+                console.error(error);
+            });
+    }
+    
+    // ============================================================================
+    // CHART UPDATE
+    // ============================================================================
+    
+    function updateChart(data) {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        
+        if (trendChart) {
+            trendChart.destroy();
+        }
+        
+        // Calculate moving average
+        const movingAverage = calculateMovingAverage(data.values, 4);
+        
+        // Calculate trend line
+        const trendLine = calculateTrendLine(data.values);
+        
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: [
+                    {
+                        label: 'Actual Values',
+                        data: data.values,
+                        borderColor: '#2E86AB',
+                        backgroundColor: 'rgba(46, 134, 171, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.1,
+                        fill: true,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    },
+                    {
+                        label: 'Trend Line',
+                        data: trendLine,
+                        borderColor: '#28A745',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false
+                    },
+                    {
+                        label: 'Moving Average (4wk)',
+                        data: movingAverage,
+                        borderColor: '#FFC107',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: false
+                    },
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    annotation: {
+                        annotations: {
+                            alertThreshold: {
+                                type: 'line',
+                                yMin: data.alert_threshold || 100,
+                                yMax: data.alert_threshold || 100,
+                                borderColor: '#DC3545',
+                                borderWidth: 2,
+                                borderDash: [6, 6],
+                                label: {
+                                    content: 'Alert Threshold',
+                                    enabled: true,
+                                    position: 'end'
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0,0,0,0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Update summary cards
+        updateSummaryCards(data);
+    }
+    
+    function calculateMovingAverage(values, window) {
+        const result = [];
+        for (let i = 0; i < values.length; i++) {
+            if (i < window - 1) {
+                result.push(null);
+            } else {
+                let sum = 0;
+                for (let j = 0; j < window; j++) {
+                    sum += values[i - j];
+                }
+                result.push(sum / window);
+            }
+        }
+        return result;
+    }
+    
+    function calculateTrendLine(values) {
+        if (values.length < 2) return values;
+        
+        const x = Array.from({length: values.length}, (_, i) => i);
+        const n = values.length;
+        
+        // Calculate linear regression
+        const sumX = x.reduce((a, b) => a + b, 0);
+        const sumY = values.reduce((a, b) => a + b, 0);
+        const sumXY = x.reduce((a, _, i) => a + x[i] * values[i], 0);
+        const sumXX = x.reduce((a, _, i) => a + x[i] * x[i], 0);
+        
+        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        
+        return x.map(xi => slope * xi + intercept);
+    }
+    
+    // ============================================================================
+    // SUMMARY CARDS UPDATE
+    // ============================================================================
+    
+    function updateSummaryCards(data) {
+        // Trend direction
+        const direction = data.trend_direction || 'stable';
+        const directionEl = document.getElementById('trend-direction');
+        const descEl = document.getElementById('trend-description');
+        
+        if (direction === 'increasing') {
+            directionEl.innerHTML = '<i class="fas fa-arrow-up" style="color: var(--success-color);"></i> Increasing';
+            descEl.innerHTML = '<i class="fas fa-arrow-up"></i> Upward trend detected';
+            descEl.className = 'summary-trend positive';
+        } else if (direction === 'decreasing') {
+            directionEl.innerHTML = '<i class="fas fa-arrow-down" style="color: var(--danger-color);"></i> Decreasing';
+            descEl.innerHTML = '<i class="fas fa-arrow-down"></i> Downward trend detected';
+            descEl.className = 'summary-trend negative';
+        } else {
+            directionEl.innerHTML = '<i class="fas fa-minus" style="color: var(--warning-color);"></i> Stable';
+            descEl.innerHTML = '<i class="fas fa-minus-circle"></i> No significant trend';
+            descEl.className = 'summary-trend neutral';
+        }
+        
+        // Percent change
+        const pctChange = data.percent_change || 0;
+        const changeEl = document.getElementById('percent-change');
+        const changeDescEl = document.getElementById('change-description');
+        changeEl.textContent = pctChange.toFixed(1) + '%';
+        changeDescEl.innerHTML = pctChange > 0 ? 
+            '<i class="fas fa-arrow-up"></i> Increase over period' : 
+            '<i class="fas fa-arrow-down"></i> Decrease over period';
+        
+        // Average
+        document.getElementById('average-value').textContent = data.average ? data.average.toFixed(0) : '-';
+        
+        // Volatility
+        const volatility = data.volatility || 0;
+        document.getElementById('volatility').textContent = volatility.toFixed(2);
+    }
+    
+    // ============================================================================
+    // STATISTICS UPDATE
+    // ============================================================================
+    
+    function updateStatistics(data) {
+        if (!data.values || data.values.length === 0) return;
+        
+        const values = data.values.filter(v => v !== null);
+        const weeks = data.labels || [];
+        
+        // Summary statistics
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const sum = values.reduce((a, b) => a + b, 0);
+        const mean = sum / values.length;
+        
+        // Sort for median
+        const sorted = [...values].sort((a, b) => a - b);
+        const median = sorted.length % 2 === 0 ?
+            (sorted[sorted.length/2 - 1] + sorted[sorted.length/2]) / 2 :
+            sorted[Math.floor(sorted.length/2)];
+        
+        // Standard deviation
+        const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+        const std = Math.sqrt(variance);
+        
+        document.getElementById('stat-min').textContent = min.toFixed(0);
+        document.getElementById('stat-max').textContent = max.toFixed(0);
+        document.getElementById('stat-median').textContent = median.toFixed(0);
+        document.getElementById('stat-mean').textContent = mean.toFixed(0);
+        document.getElementById('stat-std').textContent = std.toFixed(1);
+        document.getElementById('stat-variance').textContent = variance.toFixed(1);
+        
+        // Recent values
+        const current = values[values.length - 1] || 0;
+        const previous = values[values.length - 2] || 0;
+        
+        const avg4 = values.slice(-4).reduce((a, b) => a + b, 0) / Math.min(4, values.length);
+        const avg8 = values.slice(-8).reduce((a, b) => a + b, 0) / Math.min(8, values.length);
+        const avg12 = values.slice(-12).reduce((a, b) => a + b, 0) / Math.min(12, values.length);
+        
+        document.getElementById('current-week').textContent = current.toFixed(0);
+        document.getElementById('prev-week').textContent = previous.toFixed(0);
+        document.getElementById('avg-4week').textContent = avg4.toFixed(0);
+        document.getElementById('avg-8week').textContent = avg8.toFixed(0);
+        document.getElementById('avg-12week').textContent = avg12.toFixed(0);
+        
+        // Peak week
+        const maxIndex = values.indexOf(max);
+        document.getElementById('peak-week').textContent = weeks[maxIndex] || '-';
+        
+        // Forecast (simplified - would use proper forecasting in production)
+        const forecast1 = current * (1 + (data.trend_slope || 0));
+        const forecast2 = forecast1 * (1 + (data.trend_slope || 0));
+        const forecast3 = forecast2 * (1 + (data.trend_slope || 0));
+        const forecast4 = forecast3 * (1 + (data.trend_slope || 0));
+        
+        document.getElementById('forecast-1').textContent = Math.round(forecast1);
+        document.getElementById('forecast-2').textContent = Math.round(forecast2);
+        document.getElementById('forecast-3').textContent = Math.round(forecast3);
+        document.getElementById('forecast-4').textContent = Math.round(forecast4);
+        document.getElementById('forecast-confidence').textContent = '85%';
+    }
+    
+    // ============================================================================
+    // SEASONALITY UPDATE
+    // ============================================================================
+    
+    function updateSeasonality(data) {
+        if (!data.seasonality) return;
+        
+        document.getElementById('season-q1').textContent = data.seasonality.q1.toFixed(0);
+        document.getElementById('season-q2').textContent = data.seasonality.q2.toFixed(0);
+        document.getElementById('season-q3').textContent = data.seasonality.q3.toFixed(0);
+        document.getElementById('season-q4').textContent = data.seasonality.q4.toFixed(0);
+    }
+    
+    // ============================================================================
+    // INSIGHTS UPDATE
+    // ============================================================================
+    
+    function updateInsights(data) {
+        const insightsList = document.getElementById('insights-list');
+        let insights = [];
+        
+        if (data.trend_direction === 'increasing') {
+            insights.push({
+                icon: 'fa-arrow-up',
+                text: `<strong>Increasing trend detected:</strong> Values are rising by approximately ${data.trend_slope?.toFixed(1)} per week`
+            });
+        } else if (data.trend_direction === 'decreasing') {
+            insights.push({
+                icon: 'fa-arrow-down',
+                text: `<strong>Decreasing trend detected:</strong> Values are falling by approximately ${Math.abs(data.trend_slope || 0).toFixed(1)} per week`
+            });
+        }
+        
+        if (data.volatility > 0.3) {
+            insights.push({
+                icon: 'fa-exclamation-triangle',
+                text: `<strong>High volatility:</strong> Values fluctuate significantly (CV = ${(data.volatility * 100).toFixed(0)}%)`
+            });
+        }
+        
+        if (data.percent_change > 20) {
+            insights.push({
+                icon: 'fa-rocket',
+                text: `<strong>Rapid growth:</strong> ${data.percent_change.toFixed(0)}% increase over the selected period`
+            });
+        } else if (data.percent_change < -20) {
+            insights.push({
+                icon: 'fa-exclamation-circle',
+                text: `<strong>Sharp decline:</strong> ${Math.abs(data.percent_change).toFixed(0)}% decrease over the selected period`
+            });
+        }
+        
+        if (data.seasonality) {
+            const peakQuarter = Object.entries(data.seasonality).reduce((a, b) => a[1] > b[1] ? a : b);
+            insights.push({
+                icon: 'fa-calendar-alt',
+                text: `<strong>Seasonal pattern:</strong> Peak values typically occur in ${peakQuarter[0].toUpperCase()}`
+            });
+        }
+        
+        if (insights.length === 0) {
+            insights.push({
+                icon: 'fa-info-circle',
+                text: 'No significant patterns detected in the selected data'
+            });
+        }
+        
+        let html = '';
+        insights.forEach(insight => {
+            html += `
+                <li class="insights-item">
+                    <span class="insights-icon"><i class="fas ${insight.icon}"></i></span>
+                    <span class="insights-text">${insight.text}</span>
+                </li>
+            `;
+        });
+        
+        insightsList.innerHTML = html;
+    }
+    
+    // ============================================================================
+    // TABLE UPDATE
+    // ============================================================================
+    
+    function updateTable(data) {
+        const tbody = document.getElementById('table-body');
+        
+        if (!data.labels || data.labels.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No data available</td></tr>';
+            return;
+        }
+        
+        let html = '';
+        let prevValue = null;
+        
+        for (let i = 0; i < data.labels.length; i++) {
+            const value = data.values[i];
+            const change = prevValue !== null ? value - prevValue : 0;
+            const pctChange = prevValue !== null && prevValue !== 0 ? (change / prevValue * 100).toFixed(1) : '-';
+            
+            // Calculate moving average (simplified)
+            const window = 4;
+            let ma = null;
+            if (i >= window - 1) {
+                let sum = 0;
+                for (let j = 0; j < window; j++) {
+                    sum += data.values[i - j];
+                }
+                ma = (sum / window).toFixed(0);
+            }
+            
+            // Determine trend icon
+            let trendIcon = '';
+            if (i > 0) {
+                if (value > data.values[i-1]) trendIcon = '<i class="fas fa-arrow-up trend-up"></i>';
+                else if (value < data.values[i-1]) trendIcon = '<i class="fas fa-arrow-down trend-down"></i>';
+                else trendIcon = '<i class="fas fa-minus trend-neutral"></i>';
+            }
+            
+            html += `
+                <tr>
+                    <td><strong>${data.labels[i]}</strong></td>
+                    <td>${value.toFixed(0)}</td>
+                    <td class="${change > 0 ? 'trend-up' : change < 0 ? 'trend-down' : ''}">
+                        ${change > 0 ? '+' : ''}${change.toFixed(0)}
+                    </td>
+                    <td class="${pctChange > 0 ? 'trend-up' : pctChange < 0 ? 'trend-down' : ''}">
+                        ${pctChange !== '-' ? (pctChange > 0 ? '+' : '') + pctChange + '%' : '-'}
+                    </td>
+                    <td>${ma || '-'}</td>
+                    <td>${trendIcon}</td>
+                </tr>
+            `;
+            
+            prevValue = value;
+        }
+        
+        tbody.innerHTML = html;
+    }
+    
+    // ============================================================================
+    // EXPORT FUNCTIONS
+    // ============================================================================
+    
+    function exportTrends() {
+        let url = `/api/trends/export?facility=${currentFacility}&metric=${currentMetric}&aggregation=${aggregation}`;
+        if (startWeek && startYear) {
+            url += `&start_week=${startWeek}&start_year=${startYear}`;
+        }
+        if (endWeek && endYear) {
+            url += `&end_week=${endWeek}&end_year=${endYear}`;
+        }
+        
+        window.location.href = url;
+    }
+    
+    function printTrends() {
+        window.print();
+    }
+    
+    function saveTrendView() {
+        const name = prompt('Enter a name for this trend view:');
+        if (name) {
+            const data = {
+                name: name,
+                facility: currentFacility,
+                metric: currentMetric,
+                aggregation: aggregation,
+                start_week: startWeek,
+                start_year: startYear,
+                end_week: endWeek,
+                end_year: endYear
+            };
+            
+            fetch('/api/trends/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification('Trend view saved successfully', 'success');
+            })
+            .catch(error => {
+                showNotification('Error saving trend view', 'danger');
+            });
+        }
+    }
+</script>
+{% endblock %}

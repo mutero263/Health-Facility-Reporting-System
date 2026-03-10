@@ -1,0 +1,1111 @@
+{% extends "base.html" %}
+
+{% block title %}{{ facility.name }} - Health Facility Reporting System{% endblock %}
+
+{% block page_title %}{{ facility.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('list_facilities') }}">Facilities</a></li>
+<li class="breadcrumb-item active">{{ facility.name }}</li>
+{% endblock %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-primary" onclick="window.location.href='{{ url_for('upload_report_page') }}?facility={{ facility.id }}'">
+    <i class="fas fa-upload"></i> Upload Report
+</button>
+<button type="button" class="btn btn-outline" onclick="editFacility({{ facility.id }})">
+    <i class="fas fa-edit"></i> Edit
+</button>
+<button type="button" class="btn btn-outline" onclick="exportFacilityData()">
+    <i class="fas fa-download"></i> Export
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Facility Header */
+    .facility-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        margin-bottom: var(--spacing-xl);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .facility-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.1"><path d="M20 20 L80 20 L80 80 L20 80 Z" fill="none" stroke="white" stroke-width="2"/><circle cx="50" cy="50" r="15" fill="none" stroke="white" stroke-width="2"/></svg>');
+        background-size: 100px;
+        opacity: 0.1;
+    }
+    
+    .facility-header-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .facility-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .facility-meta {
+        display: flex;
+        gap: var(--spacing-lg);
+        font-size: var(--font-size-base);
+        opacity: 0.9;
+    }
+    
+    .facility-meta i {
+        margin-right: var(--spacing-xs);
+    }
+    
+    .facility-status-badge {
+        display: inline-block;
+        padding: var(--spacing-sm) var(--spacing-lg);
+        border-radius: var(--border-radius-lg);
+        font-weight: 600;
+        font-size: var(--font-size-base);
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(5px);
+    }
+    
+    /* Quick Stats */
+    .quick-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .stat-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        transition: var(--transition-normal);
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .stat-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: var(--border-radius-circle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-xl);
+    }
+    
+    .stat-icon.primary { background: var(--primary-light); color: var(--primary-dark); }
+    .stat-icon.success { background: var(--success-light); color: var(--success-color); }
+    .stat-icon.warning { background: var(--warning-light); color: var(--warning-color); }
+    .stat-icon.danger { background: var(--danger-light); color: var(--danger-color); }
+    
+    .stat-content {
+        flex: 1;
+    }
+    
+    .stat-label {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stat-value {
+        font-size: var(--font-size-xl);
+        font-weight: 700;
+        color: var(--darker-gray);
+        line-height: 1.2;
+    }
+    
+    .stat-trend {
+        font-size: var(--font-size-sm);
+        margin-top: var(--spacing-xs);
+    }
+    
+    .stat-trend.positive { color: var(--success-color); }
+    .stat-trend.negative { color: var(--danger-color); }
+    
+    /* Info Grid */
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .info-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .info-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-md);
+        padding-bottom: var(--spacing-sm);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .info-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-sm);
+        padding: var(--spacing-xs) 0;
+    }
+    
+    .info-label {
+        color: var(--dark-gray);
+    }
+    
+    .info-value {
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .info-value.success { color: var(--success-color); }
+    .info-value.warning { color: var(--warning-color); }
+    .info-value.danger { color: var(--danger-color); }
+    
+    /* Tabs */
+    .detail-tabs {
+        display: flex;
+        gap: var(--spacing-xs);
+        margin-bottom: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: var(--spacing-sm);
+    }
+    
+    .detail-tab {
+        padding: var(--spacing-md) var(--spacing-lg);
+        border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+        cursor: pointer;
+        transition: var(--transition-fast);
+        font-weight: 500;
+        color: var(--dark-gray);
+    }
+    
+    .detail-tab:hover {
+        background: var(--light-gray);
+        color: var(--primary-color);
+    }
+    
+    .detail-tab.active {
+        background: var(--primary-color);
+        color: var(--white);
+    }
+    
+    .detail-pane {
+        display: none;
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .detail-pane.active {
+        display: block;
+    }
+    
+    /* Reports Table */
+    .reports-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .reports-table th {
+        padding: var(--spacing-md);
+        text-align: left;
+        background: var(--light-gray);
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .reports-table td {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .reports-table tr:hover td {
+        background: var(--light-gray);
+    }
+    
+    .report-status {
+        display: inline-block;
+        padding: var(--spacing-xs) var(--spacing-md);
+        border-radius: var(--border-radius-sm);
+        font-size: var(--font-size-sm);
+        font-weight: 500;
+    }
+    
+    .report-status.complete {
+        background: var(--success-light);
+        color: var(--success-color);
+    }
+    
+    .report-status.pending {
+        background: var(--warning-light);
+        color: var(--warning-color);
+    }
+    
+    .report-status.missing {
+        background: var(--danger-light);
+        color: var(--danger-color);
+    }
+    
+    /* Performance Chart */
+    .performance-chart {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: var(--spacing-lg);
+        height: 400px;
+    }
+    
+    /* Alerts List */
+    .alerts-list {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .alert-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+        transition: var(--transition-fast);
+    }
+    
+    .alert-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .alert-item:last-child {
+        border-bottom: none;
+    }
+    
+    .alert-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--border-radius-circle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-lg);
+    }
+    
+    .alert-icon.critical { background: var(--danger-light); color: var(--danger-color); }
+    .alert-icon.high { background: var(--warning-light); color: var(--warning-color); }
+    .alert-icon.medium { background: var(--info-light); color: var(--info-color); }
+    .alert-icon.low { background: var(--success-light); color: var(--success-color); }
+    
+    .alert-content {
+        flex: 1;
+    }
+    
+    .alert-title {
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .alert-meta {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        display: flex;
+        gap: var(--spacing-md);
+    }
+    
+    .alert-actions {
+        display: flex;
+        gap: var(--spacing-xs);
+    }
+    
+    /* Staff List */
+    .staff-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: var(--spacing-md);
+    }
+    
+    .staff-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-md);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+    
+    .staff-avatar {
+        width: 50px;
+        height: 50px;
+        border-radius: var(--border-radius-circle);
+        background: var(--primary-light);
+        color: var(--primary-dark);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-xl);
+        font-weight: 600;
+    }
+    
+    .staff-info {
+        flex: 1;
+    }
+    
+    .staff-name {
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .staff-role {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+    }
+    
+    /* Timeline */
+    .timeline {
+        position: relative;
+        padding-left: var(--spacing-xl);
+    }
+    
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 7px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--border-color);
+    }
+    
+    .timeline-item {
+        position: relative;
+        padding-bottom: var(--spacing-lg);
+    }
+    
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -29px;
+        top: 0;
+        width: 16px;
+        height: 16px;
+        border-radius: var(--border-radius-circle);
+        background: var(--white);
+        border: 3px solid var(--primary-color);
+    }
+    
+    .timeline-item.success::before { border-color: var(--success-color); }
+    .timeline-item.warning::before { border-color: var(--warning-color); }
+    .timeline-item.danger::before { border-color: var(--danger-color); }
+    
+    .timeline-date {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .timeline-title {
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .timeline-description {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .facility-header-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--spacing-md);
+        }
+        
+        .info-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .quick-stats {
+            grid-template-columns: 1fr;
+        }
+        
+        .detail-tabs {
+            flex-wrap: wrap;
+        }
+        
+        .detail-tab {
+            flex: 1 1 auto;
+            text-align: center;
+        }
+        
+        .staff-list {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Facility Header -->
+<div class="facility-header">
+    <div class="facility-header-content">
+        <div>
+            <h1 class="facility-title">{{ facility.name }}</h1>
+            <div class="facility-meta">
+                <span><i class="fas fa-map-marker-alt"></i> {{ facility.district }}, {{ facility.province }}</span>
+                <span><i class="fas fa-tag"></i> {{ facility.type|upper }}</span>
+                <span><i class="fas fa-users"></i> Pop: {% if facility.catchment_population %}{{ facility.catchment_population|number_format }}{% else %}N/A{% endif %}</span>
+            </div>
+        </div>
+        <div class="facility-status-badge {% if facility.active %}active{% else %}inactive{% endif %}">
+            <i class="fas fa-circle"></i> {% if facility.active %}Active{% else %}Inactive{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="quick-stats">
+    <div class="stat-card">
+        <div class="stat-icon primary">
+            <i class="fas fa-file-alt"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Total Reports</div>
+            <div class="stat-value">{% if stats %}{{ stats.total_reports|default(0) }}{% else %}0{% endif %}</div>
+            <div class="stat-trend positive">
+                <i class="fas fa-arrow-up"></i> {% if stats %}{{ stats.reports_this_year|default(0) }}{% else %}0{% endif %} this year
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon success">
+            <i class="fas fa-calendar-check"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Last Report</div>
+            <div class="stat-value">{% if stats %}{{ stats.last_report_week|default('Never') }}{% else %}Never{% endif %}</div>
+            <div class="stat-trend {% if stats and stats.days_since_report and stats.days_since_report < 7 %}positive{% else %}negative{% endif %}">
+                <i class="fas fa-clock"></i> {% if stats %}{{ stats.days_since_report|default(0) }}{% else %}0{% endif %} days ago
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon warning">
+            <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Reporting Rate</div>
+            <div class="stat-value">{% if stats %}{{ stats.reporting_rate|default(0) }}{% else %}0{% endif %}%</div>
+            <div class="stat-trend {% if stats and stats.reporting_rate and stats.reporting_rate > 80 %}positive{% else %}negative{% endif %}">
+                Last 12 weeks
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon danger">
+            <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Active Alerts</div>
+            <div class="stat-value">{% if stats %}{{ stats.active_alerts|default(0) }}{% else %}0{% endif %}</div>
+            <div class="stat-trend">
+                <i class="fas fa-bell"></i> {% if stats and stats.critical_alerts %}{{ stats.critical_alerts }}{% else %}0{% endif %} critical
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Info Grid -->
+<div class="info-grid">
+    <!-- Contact Information -->
+    <div class="info-card">
+        <h3 class="info-title">Contact Information</h3>
+        <div class="info-item">
+            <span class="info-label">Phone:</span>
+            <span class="info-value">{% if facility.phone %}{{ facility.phone }}{% else %}Not available{% endif %}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Email:</span>
+            <span class="info-value">{% if facility.email %}{{ facility.email }}{% else %}Not available{% endif %}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Address:</span>
+            <span class="info-value">{% if facility.address %}{{ facility.address }}{% else %}Not available{% endif %}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Coordinates:</span>
+            <span class="info-value">
+                {% if facility.latitude and facility.longitude %}
+                {{ facility.latitude|round(4) }}, {{ facility.longitude|round(4) }}
+                {% else %}
+                Not available
+                {% endif %}
+            </span>
+        </div>
+    </div>
+    
+    <!-- Key Indicators -->
+    <div class="info-card">
+        <h3 class="info-title">Key Indicators</h3>
+        <div class="info-item">
+            <span class="info-label">Malaria Positivity:</span>
+            <span class="info-value {% if indicators and indicators.malaria_positivity_rate and indicators.malaria_positivity_rate < 0.1 %}success{% elif indicators and indicators.malaria_positivity_rate and indicators.malaria_positivity_rate < 0.2 %}warning{% else %}danger{% endif %}">
+                {% if indicators %}{{ (indicators.malaria_positivity_rate * 100)|round(1) }}{% else %}0{% endif %}%
+            </span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Institutional Delivery:</span>
+            <span class="info-value {% if indicators and indicators.institutional_delivery_rate and indicators.institutional_delivery_rate > 0.9 %}success{% elif indicators and indicators.institutional_delivery_rate and indicators.institutional_delivery_rate > 0.7 %}warning{% else %}danger{% endif %}">
+                {% if indicators %}{{ (indicators.institutional_delivery_rate * 100)|round(1) }}{% else %}0{% endif %}%
+            </span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">ANC Coverage:</span>
+            <span class="info-value {% if indicators and indicators.anc_coverage and indicators.anc_coverage > 0.85 %}success{% elif indicators and indicators.anc_coverage and indicators.anc_coverage > 0.6 %}warning{% else %}danger{% endif %}">
+                {% if indicators %}{{ (indicators.anc_coverage * 100)|round(1) }}{% else %}0{% endif %}%
+            </span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Penta3 Coverage:</span>
+            <span class="info-value {% if indicators and indicators.penta3_coverage and indicators.penta3_coverage > 0.9 %}success{% elif indicators and indicators.penta3_coverage and indicators.penta3_coverage > 0.7 %}warning{% else %}danger{% endif %}">
+                {% if indicators %}{{ (indicators.penta3_coverage * 100)|round(1) }}{% else %}0{% endif %}%
+            </span>
+        </div>
+    </div>
+    
+    <!-- Staff Summary -->
+    <div class="info-card">
+        <h3 class="info-title">Staff Summary</h3>
+        <div class="info-item">
+            <span class="info-label">Doctors:</span>
+            <span class="info-value">{% if staff_summary %}{{ staff_summary.doctors|default(0) }}{% else %}0{% endif %}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Nurses:</span>
+            <span class="info-value">{% if staff_summary %}{{ staff_summary.nurses|default(0) }}{% else %}0{% endif %}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Community Health Workers:</span>
+            <span class="info-value">{% if staff_summary %}{{ staff_summary.chws|default(0) }}{% else %}0{% endif %}</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">Total Staff:</span>
+            <span class="info-value">{% if staff_summary %}{{ staff_summary.total|default(0) }}{% else %}0{% endif %}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Tabs -->
+<div class="detail-tabs">
+    <div class="detail-tab active" onclick="switchDetailTab('overview')">Overview</div>
+    <div class="detail-tab" onclick="switchDetailTab('reports')">Weekly Reports</div>
+    <div class="detail-tab" onclick="switchDetailTab('performance')">Performance</div>
+    <div class="detail-tab" onclick="switchDetailTab('alerts')">Alerts</div>
+    <div class="detail-tab" onclick="switchDetailTab('staff')">Staff</div>
+    <div class="detail-tab" onclick="switchDetailTab('timeline')">Timeline</div>
+</div>
+
+<!-- Overview Pane -->
+<div class="detail-pane active" id="pane-overview">
+    <div class="performance-chart" id="overview-chart">
+        <!-- Chart will be rendered here -->
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Recent Reports</h3>
+                </div>
+                <div class="card-body">
+                    {% if recent_reports %}
+                        {% for report in recent_reports %}
+                        <div class="info-item">
+                            <span class="info-label">Week {{ report.week }}, {{ report.year }}</span>
+                            <span class="info-value">
+                                <a href="{{ url_for('view_report', report_id=report.id) }}">View <i class="fas fa-arrow-right"></i></a>
+                            </span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No recent reports</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Active Alerts</h3>
+                </div>
+                <div class="card-body">
+                    {% if active_alerts %}
+                        {% for alert in active_alerts %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <span class="badge badge-{{ alert.severity }}">{{ alert.severity|upper }}</span>
+                            </span>
+                            <span class="info-value">{{ alert.message|truncate(50) }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No active alerts</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reports Pane -->
+<div class="detail-pane" id="pane-reports">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Weekly Reports</h3>
+            <div class="card-actions">
+                <select class="form-select form-select-sm" id="report-year" onchange="filterReports()">
+                    <option value="">All Years</option>
+                    {% for year in report_years %}
+                    <option value="{{ year }}">{{ year }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="card-body">
+            <table class="reports-table">
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Year</th>
+                        <th>Report Date</th>
+                        <th>OPD Visits</th>
+                        <th>Deliveries</th>
+                        <th>Malaria</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if reports %}
+                        {% for report in reports %}
+                        <tr>
+                            <td>Week {{ report.week }}</td>
+                            <td>{{ report.year }}</td>
+                            <td>{% if report.report_date %}{{ report.report_date|date }}{% else %}-{% endif %}</td>
+                            <td>{{ report.opd_visits|default(0) }}</td>
+                            <td>{{ report.institutional_deliveries|default(0) }}</td>
+                            <td>{{ report.malaria_positive|default('0/0') }}</td>
+                            <td>
+                                <span class="report-status {% if report.data_quality_score and report.data_quality_score > 80 %}complete{% elif report.data_quality_score and report.data_quality_score > 50 %}pending{% else %}missing{% endif %}">
+                                    {% if report.data_quality_score %}
+                                        {{ report.data_quality_score }}%
+                                    {% else %}
+                                        Pending
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('view_report', report_id=report.id) }}" class="btn btn-sm btn-outline">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <button class="btn btn-sm btn-outline" onclick="editReport({{ report.id }})">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center">No reports found</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Pane -->
+<div class="detail-pane" id="pane-performance">
+    <div class="performance-chart" id="performance-chart">
+        <!-- Chart will be rendered here -->
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Malaria Trends</h3>
+                </div>
+                <div class="card-body">
+                    <div class="performance-chart" id="malaria-chart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Maternal Health</h3>
+                </div>
+                <div class="card-body">
+                    <div class="performance-chart" id="maternal-chart" style="height: 300px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts Pane -->
+<div class="detail-pane" id="pane-alerts">
+    <div class="alerts-list">
+        {% if alerts %}
+            {% for alert in alerts %}
+            <div class="alert-item">
+                <div class="alert-icon {{ alert.severity }}">
+                    <i class="fas fa-{% if alert.severity == 'critical' %}exclamation-circle{% elif alert.severity == 'high' %}exclamation-triangle{% elif alert.severity == 'medium' %}bell{% else %}info-circle{% endif %}"></i>
+                </div>
+                <div class="alert-content">
+                    <div class="alert-title">{{ alert.title }}</div>
+                    <div class="alert-meta">
+                        <span><i class="fas fa-calendar"></i> {{ alert.created_at|date }}</span>
+                        <span><i class="fas fa-tag"></i> {{ alert.type }}</span>
+                    </div>
+                    <div class="alert-description">{{ alert.message }}</div>
+                </div>
+                <div class="alert-actions">
+                    {% if not alert.resolved %}
+                    <button class="btn btn-sm btn-success" onclick="resolveAlert({{ alert.id }})">
+                        <i class="fas fa-check"></i> Resolve
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-sm btn-outline" onclick="viewAlert({{ alert.id }})">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="text-center p-5">
+                <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                <h4>No Active Alerts</h4>
+                <p class="text-muted">This facility has no active alerts at this time.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Staff Pane -->
+<div class="detail-pane" id="pane-staff">
+    <div class="staff-list">
+        {% if staff %}
+            {% for member in staff %}
+            <div class="staff-card">
+                <div class="staff-avatar">{{ member.initials }}</div>
+                <div class="staff-info">
+                    <div class="staff-name">{{ member.name }}</div>
+                    <div class="staff-role">{{ member.role }}</div>
+                </div>
+                <button class="btn btn-sm btn-outline" onclick="viewStaff({{ member.id }})">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="text-center p-5">
+                <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                <h4>No Staff Records</h4>
+                <p class="text-muted">No staff members have been added for this facility.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Timeline Pane -->
+<div class="detail-pane" id="pane-timeline">
+    <div class="timeline">
+        {% if timeline %}
+            {% for event in timeline %}
+            <div class="timeline-item {{ event.type }}">
+                <div class="timeline-date">{{ event.date }}</div>
+                <div class="timeline-title">{{ event.title }}</div>
+                <div class="timeline-description">{{ event.description }}</div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="text-center p-5">
+                <i class="fas fa-history fa-3x text-muted mb-3"></i>
+                <h4>No Timeline Events</h4>
+                <p class="text-muted">No significant events have been recorded for this facility.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // ============================================================================
+    // STATE MANAGEMENT
+    // ============================================================================
+    
+    let currentTab = 'overview';
+    let performanceChart = null;
+    let malariaChart = null;
+    let maternalChart = null;
+    let overviewChart = null;
+    
+    // ============================================================================
+    // TAB SWITCHING
+    // ============================================================================
+    
+    function switchDetailTab(tabId) {
+        currentTab = tabId;
+        
+        // Update tabs
+        document.querySelectorAll('.detail-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelector(`.detail-tab[onclick*="${tabId}"]`).classList.add('active');
+        
+        // Update panes
+        document.querySelectorAll('.detail-pane').forEach(pane => {
+            pane.classList.remove('active');
+        });
+        document.getElementById('pane-' + tabId).classList.add('active');
+        
+        // Load chart data if needed
+        if (tabId === 'overview' && !overviewChart) {
+            loadOverviewChart();
+        } else if (tabId === 'performance') {
+            loadPerformanceCharts();
+        }
+    }
+    
+    // ============================================================================
+    // CHART LOADING
+    // ============================================================================
+    
+    function loadOverviewChart() {
+        const ctx = document.getElementById('overview-chart').getContext('2d');
+        
+        fetch('/api/facilities/{{ facility.id }}/trends?metric=opd_visits')
+            .then(response => response.json())
+            .then(data => {
+                overviewChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            label: 'OPD Visits',
+                            data: data.values,
+                            borderColor: '#2E86AB',
+                            backgroundColor: 'rgba(46, 134, 171, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.1,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'OPD Visits Trend'
+                            }
+                        }
+                    }
+                });
+            });
+    }
+    
+    function loadPerformanceCharts() {
+        // Malaria chart
+        fetch('/api/facilities/{{ facility.id }}/malaria')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('malaria-chart').getContext('2d');
+                malariaChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.weeks,
+                        datasets: [
+                            {
+                                label: 'Tested',
+                                data: data.tested,
+                                borderColor: '#17A2B8',
+                                yAxisID: 'y',
+                                fill: false
+                            },
+                            {
+                                label: 'Positive',
+                                data: data.positive,
+                                borderColor: '#DC3545',
+                                yAxisID: 'y',
+                                fill: false
+                            },
+                            {
+                                label: 'Positivity Rate',
+                                data: data.rates,
+                                borderColor: '#FFC107',
+                                yAxisID: 'y1',
+                                borderDash: [5, 5]
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { type: 'linear', position: 'left' },
+                            y1: { type: 'linear', position: 'right', min: 0, max: 1 }
+                        }
+                    }
+                });
+            });
+        
+        // Maternal health chart
+        fetch('/api/facilities/{{ facility.id }}/maternal')
+            .then(response => response.json())
+            .then(data => {
+                const ctx = document.getElementById('maternal-chart').getContext('2d');
+                maternalChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.weeks,
+                        datasets: [
+                            {
+                                label: 'Deliveries',
+                                data: data.deliveries,
+                                backgroundColor: '#A23B72'
+                            },
+                            {
+                                label: 'ANC',
+                                data: data.anc,
+                                backgroundColor: '#5D9B9B'
+                            },
+                            {
+                                label: 'PNC',
+                                data: data.pnc,
+                                backgroundColor: '#B5C9C9'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            });
+    }
+    
+    // ============================================================================
+    // FILTERING
+    // ============================================================================
+    
+    function filterReports() {
+        const year = document.getElementById('report-year').value;
+        window.location.href = '/facilities/{{ facility.id }}?year=' + year + '#reports';
+    }
+    
+    // ============================================================================
+    // ACTIONS
+    // ============================================================================
+    
+    function editFacility(id) {
+        window.location.href = '/facilities/' + id + '/edit';
+    }
+    
+    function exportFacilityData() {
+        window.location.href = '/api/facilities/{{ facility.id }}/export';
+    }
+    
+    function editReport(id) {
+        window.location.href = '/reports/edit/' + id;
+    }
+    
+    function resolveAlert(id) {
+        showConfirm('Resolve Alert', 'Are you sure you want to mark this alert as resolved?', function() {
+            fetch('/api/alerts/' + id + '/resolve', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': CSRF_TOKEN }
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                showNotification('Alert resolved', 'success');
+                setTimeout(function() { location.reload(); }, 1500);
+            });
+        });
+    }
+    
+    function viewAlert(id) {
+        // Show alert details modal
+        showNotification('Alert details view coming soon', 'info');
+    }
+    
+    function viewStaff(id) {
+        showNotification('Staff details view coming soon', 'info');
+    }
+    
+    // ============================================================================
+    // INITIALIZATION
+    // ============================================================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load overview chart by default
+        loadOverviewChart();
+        
+        // Check for hash in URL
+        if (window.location.hash) {
+            const tab = window.location.hash.substring(1);
+            if (tab === 'reports' || tab === 'performance' || tab === 'alerts' || tab === 'staff' || tab === 'timeline') {
+                switchDetailTab(tab);
+            }
+        }
+    });
+</script>
+{% endblock %}

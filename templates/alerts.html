@@ -1,0 +1,1277 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts - Health Facility Reporting System{% endblock %}
+
+{% block page_title %}Alerts & Notifications{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+<li class="breadcrumb-item active">Alerts</li>
+{% endblock %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline" onclick="refreshAlerts()">
+    <i class="fas fa-sync-alt"></i> Refresh
+</button>
+<button type="button" class="btn btn-outline" onclick="exportAlerts()">
+    <i class="fas fa-download"></i> Export
+</button>
+<button type="button" class="btn btn-primary" onclick="resolveAllAlerts()">
+    <i class="fas fa-check-double"></i> Resolve All
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Alerts Header */
+    .alerts-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        margin-bottom: var(--spacing-xl);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .alerts-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.1"><circle cx="20" cy="20" r="5" fill="white"/><circle cx="80" cy="30" r="5" fill="white"/><circle cx="40" cy="70" r="5" fill="white"/><circle cx="70" cy="80" r="5" fill="white"/></svg>');
+        background-size: 50px;
+        opacity: 0.1;
+    }
+    
+    .alerts-header-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .alerts-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .alerts-subtitle {
+        font-size: var(--font-size-lg);
+        opacity: 0.9;
+    }
+    
+    .alert-badge-large {
+        display: inline-block;
+        padding: var(--spacing-md) var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(5px);
+        font-size: var(--font-size-xl);
+        font-weight: 700;
+    }
+    
+    .alert-badge-large.critical { background: var(--danger-color); }
+    .alert-badge-large.high { background: var(--warning-color); color: var(--darker-gray); }
+    .alert-badge-large.medium { background: var(--info-color); }
+    .alert-badge-large.low { background: var(--success-color); }
+    
+    /* Stats Cards */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .stat-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        transition: var(--transition-normal);
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .stat-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: var(--border-radius-circle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-xl);
+    }
+    
+    .stat-icon.critical { background: var(--danger-light); color: var(--danger-color); }
+    .stat-icon.high { background: var(--warning-light); color: var(--warning-color); }
+    .stat-icon.medium { background: var(--info-light); color: var(--info-color); }
+    .stat-icon.low { background: var(--success-light); color: var(--success-color); }
+    .stat-icon.resolved { background: var(--light-gray); color: var(--dark-gray); }
+    
+    .stat-content {
+        flex: 1;
+    }
+    
+    .stat-label {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stat-value {
+        font-size: var(--font-size-xl);
+        font-weight: 700;
+        color: var(--darker-gray);
+        line-height: 1.2;
+    }
+    
+    /* Filter Panel */
+    .filter-panel {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .filter-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-lg);
+        padding-bottom: var(--spacing-sm);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    
+    .filter-label {
+        font-weight: 500;
+        color: var(--darker-gray);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    
+    .filter-label i {
+        color: var(--primary-color);
+        width: 20px;
+    }
+    
+    .filter-actions {
+        display: flex;
+        gap: var(--spacing-md);
+        justify-content: flex-end;
+    }
+    
+    /* Alert Tabs */
+    .alert-tabs {
+        display: flex;
+        gap: var(--spacing-xs);
+        margin-bottom: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: var(--spacing-sm);
+        flex-wrap: wrap;
+    }
+    
+    .alert-tab {
+        padding: var(--spacing-sm) var(--spacing-lg);
+        border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+        cursor: pointer;
+        transition: var(--transition-fast);
+        font-weight: 500;
+        color: var(--dark-gray);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    
+    .alert-tab:hover {
+        background: var(--light-gray);
+        color: var(--primary-color);
+    }
+    
+    .alert-tab.active {
+        background: var(--primary-color);
+        color: var(--white);
+    }
+    
+    .alert-tab .badge {
+        background: rgba(255,255,255,0.2);
+        padding: 2px 6px;
+        border-radius: var(--border-radius-sm);
+        font-size: var(--font-size-xs);
+    }
+    
+    /* Alerts List */
+    .alerts-list {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .alert-item {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        padding: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        transition: var(--transition-fast);
+        animation: slideIn 0.3s ease;
+    }
+    
+    .alert-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .alert-item:last-child {
+        border-bottom: none;
+    }
+    
+    .alert-item.resolved {
+        opacity: 0.7;
+        background: var(--light-gray);
+    }
+    
+    .alert-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--border-radius-circle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-lg);
+        flex-shrink: 0;
+    }
+    
+    .alert-icon.critical { background: var(--danger-light); color: var(--danger-color); }
+    .alert-icon.high { background: var(--warning-light); color: var(--warning-color); }
+    .alert-icon.medium { background: var(--info-light); color: var(--info-color); }
+    .alert-icon.low { background: var(--success-light); color: var(--success-color); }
+    .alert-icon.resolved { background: var(--light-gray); color: var(--dark-gray); }
+    
+    .alert-content {
+        flex: 1;
+    }
+    
+    .alert-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-xs);
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+    }
+    
+    .alert-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .alert-type-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: var(--border-radius-sm);
+        font-size: var(--font-size-xs);
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+    
+    .alert-type-badge.data-quality { background: var(--info-light); color: var(--info-color); }
+    .alert-type-badge.performance { background: var(--warning-light); color: var(--warning-color); }
+    .alert-type-badge.disease { background: var(--danger-light); color: var(--danger-color); }
+    .alert-type-badge.stock { background: var(--primary-light); color: var(--primary-dark); }
+    
+    .alert-message {
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-sm);
+        line-height: 1.5;
+    }
+    
+    .alert-meta {
+        display: flex;
+        gap: var(--spacing-lg);
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        flex-wrap: wrap;
+    }
+    
+    .alert-meta-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    
+    .alert-meta-item i {
+        color: var(--primary-color);
+    }
+    
+    .alert-actions {
+        display: flex;
+        gap: var(--spacing-xs);
+        flex-shrink: 0;
+    }
+    
+    .alert-action-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--border-radius-circle);
+        border: none;
+        background: var(--light-gray);
+        color: var(--dark-gray);
+        cursor: pointer;
+        transition: var(--transition-fast);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .alert-action-btn:hover {
+        background: var(--primary-color);
+        color: var(--white);
+    }
+    
+    .alert-action-btn.resolve:hover {
+        background: var(--success-color);
+    }
+    
+    .alert-action-btn.delete:hover {
+        background: var(--danger-color);
+    }
+    
+    /* Severity Indicators */
+    .severity-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: var(--border-radius-circle);
+        margin-right: var(--spacing-xs);
+    }
+    
+    .severity-indicator.critical { background: var(--danger-color); }
+    .severity-indicator.high { background: var(--warning-color); }
+    .severity-indicator.medium { background: var(--info-color); }
+    .severity-indicator.low { background: var(--success-color); }
+    
+    /* Alert Details Modal */
+    .alert-details-modal {
+        max-width: 600px;
+    }
+    
+    .details-section {
+        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-md);
+        background: var(--light-gray);
+        border-radius: var(--border-radius-md);
+    }
+    
+    .details-title {
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+        color: var(--dark-gray);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .details-content {
+        color: var(--darker-gray);
+    }
+    
+    .details-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-md);
+    }
+    
+    .details-item {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .details-item-label {
+        font-size: var(--font-size-xs);
+        color: var(--dark-gray);
+        margin-bottom: 2px;
+    }
+    
+    .details-item-value {
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    /* Bulk Actions */
+    .bulk-actions {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        animation: slideDown 0.3s ease;
+    }
+    
+    .bulk-actions .selected-count {
+        font-weight: 600;
+        color: var(--primary-color);
+    }
+    
+    .bulk-actions .actions {
+        display: flex;
+        gap: var(--spacing-sm);
+        margin-left: auto;
+    }
+    
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: var(--spacing-xxl);
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .empty-icon {
+        font-size: 4rem;
+        color: var(--success-color);
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .empty-title {
+        font-size: var(--font-size-xl);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-md);
+    }
+    
+    .empty-description {
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-xl);
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .pulse {
+        animation: pulse 2s infinite;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .alerts-header-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--spacing-md);
+        }
+        
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .filter-actions {
+            flex-direction: column;
+        }
+        
+        .filter-actions button {
+            width: 100%;
+        }
+        
+        .alert-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .alert-meta {
+            flex-direction: column;
+            gap: var(--spacing-xs);
+        }
+        
+        .alert-actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+        
+        .bulk-actions {
+            flex-wrap: wrap;
+        }
+        
+        .bulk-actions .actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+        
+        .details-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Alerts Header -->
+<div class="alerts-header">
+    <div class="alerts-header-content">
+        <div>
+            <h1 class="alerts-title">Alerts & Notifications</h1>
+            <p class="alerts-subtitle">Monitor and manage system alerts for health facilities</p>
+        </div>
+        <div class="alert-badge-large {% if summary.critical_unresolved > 0 %}critical{% elif summary.high_unresolved > 0 %}high{% else %}low{% endif %}">
+            <i class="fas fa-bell"></i>
+            {% if summary %}
+                {{ summary.critical_unresolved + summary.high_unresolved + summary.medium_unresolved + summary.low_unresolved }} Active
+            {% else %}
+                0 Active
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon critical">
+            <i class="fas fa-exclamation-circle"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Critical</div>
+            <div class="stat-value">{% if summary %}{{ summary.critical_unresolved|default(0) }}{% else %}0{% endif %}</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon high">
+            <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">High</div>
+            <div class="stat-value">{% if summary %}{{ summary.high_unresolved|default(0) }}{% else %}0{% endif %}</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon medium">
+            <i class="fas fa-bell"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Medium</div>
+            <div class="stat-value">{% if summary %}{{ summary.medium_unresolved|default(0) }}{% else %}0{% endif %}</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon low">
+            <i class="fas fa-info-circle"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Low</div>
+            <div class="stat-value">{% if summary %}{{ summary.low_unresolved|default(0) }}{% else %}0{% endif %}</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon resolved">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Resolved</div>
+            <div class="stat-value">{% if summary %}{{ summary.resolved|default(0) }}{% else %}0{% endif %}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Filter Panel -->
+<div class="filter-panel">
+    <h3 class="filter-title">Filter Alerts</h3>
+    
+    <div class="filter-grid">
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-exclamation-circle"></i> Severity</label>
+            <select class="form-select" id="severity-filter">
+                <option value="all">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-tag"></i> Type</label>
+            <select class="form-select" id="type-filter">
+                <option value="all">All Types</option>
+                <option value="data_quality">Data Quality</option>
+                <option value="performance">Performance</option>
+                <option value="disease_surveillance">Disease Surveillance</option>
+                <option value="stock">Stock</option>
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-building"></i> Facility</label>
+            <select class="form-select" id="facility-filter">
+                <option value="all">All Facilities</option>
+                {% if facilities %}
+                    {% for facility in facilities %}
+                    <option value="{{ facility.id }}">{{ facility.name }}</option>
+                    {% endfor %}
+                {% endif %}
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-calendar"></i> Date Range</label>
+            <select class="form-select" id="date-filter">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="filter-actions">
+        <button type="button" class="btn btn-outline" onclick="resetFilters()">
+            <i class="fas fa-undo"></i> Reset
+        </button>
+        <button type="button" class="btn btn-primary" onclick="applyFilters()">
+            <i class="fas fa-filter"></i> Apply Filters
+        </button>
+    </div>
+</div>
+
+<!-- Bulk Actions -->
+<div class="bulk-actions" id="bulk-actions" style="display: none;">
+    <div>
+        <span class="selected-count" id="selected-count">0</span> alerts selected
+    </div>
+    <div class="actions">
+        <button type="button" class="btn btn-sm btn-success" onclick="bulkResolve()">
+            <i class="fas fa-check"></i> Resolve Selected
+        </button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="bulkAcknowledge()">
+            <i class="fas fa-eye"></i> Acknowledge
+        </button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="bulkExport()">
+            <i class="fas fa-download"></i> Export
+        </button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="clearSelection()">
+            <i class="fas fa-times"></i> Clear
+        </button>
+    </div>
+</div>
+
+<!-- Alert Tabs -->
+<div class="alert-tabs">
+    <div class="alert-tab active" onclick="switchAlertTab('all')">
+        <i class="fas fa-list"></i> All Alerts
+        <span class="badge">{% if summary %}{{ summary.total_unresolved|default(0) }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="alert-tab" onclick="switchAlertTab('critical')">
+        <i class="fas fa-exclamation-circle"></i> Critical
+        <span class="badge">{% if summary %}{{ summary.critical_unresolved|default(0) }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="alert-tab" onclick="switchAlertTab('high')">
+        <i class="fas fa-exclamation-triangle"></i> High
+        <span class="badge">{% if summary %}{{ summary.high_unresolved|default(0) }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="alert-tab" onclick="switchAlertTab('medium')">
+        <i class="fas fa-bell"></i> Medium
+        <span class="badge">{% if summary %}{{ summary.medium_unresolved|default(0) }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="alert-tab" onclick="switchAlertTab('low')">
+        <i class="fas fa-info-circle"></i> Low
+        <span class="badge">{% if summary %}{{ summary.low_unresolved|default(0) }}{% else %}0{% endif %}</span>
+    </div>
+    <div class="alert-tab" onclick="switchAlertTab('resolved')">
+        <i class="fas fa-check-circle"></i> Resolved
+    </div>
+</div>
+
+<!-- Alerts List -->
+<div class="alerts-list" id="alerts-list">
+    {% if alerts %}
+        {% for alert in alerts %}
+        <div class="alert-item {% if alert.resolved %}resolved{% endif %}" data-alert-id="{{ alert.id }}" data-severity="{{ alert.severity }}" data-type="{{ alert.type }}" data-facility="{{ alert.facility_id }}">
+            <div class="alert-icon {{ alert.severity if not alert.resolved else 'resolved' }}">
+                <i class="fas fa-{% if alert.severity == 'critical' %}exclamation-circle{% elif alert.severity == 'high' %}exclamation-triangle{% elif alert.severity == 'medium' %}bell{% elif alert.severity == 'low' %}info-circle{% else %}check-circle{% endif %}"></i>
+            </div>
+            
+            <div class="alert-content">
+                <div class="alert-header">
+                    <div class="alert-title">{{ alert.title }}</div>
+                    <span class="alert-type-badge {{ alert.type }}">{{ alert.type|replace('_', ' ')|title }}</span>
+                </div>
+                
+                <div class="alert-message">{{ alert.message }}</div>
+                
+                <div class="alert-meta">
+                    <span class="alert-meta-item">
+                        <i class="fas fa-building"></i> {{ alert.facility_name }}
+                    </span>
+                    <span class="alert-meta-item">
+                        <i class="fas fa-calendar"></i> {{ alert.created_at|date }}
+                    </span>
+                    {% if alert.week and alert.year %}
+                    <span class="alert-meta-item">
+                        <i class="fas fa-calendar-week"></i> Week {{ alert.week }}, {{ alert.year }}
+                    </span>
+                    {% endif %}
+                    <span class="alert-meta-item">
+                        <span class="severity-indicator {{ alert.severity }}"></span>
+                        {{ alert.severity|title }}
+                    </span>
+                </div>
+                
+                {% if alert.details %}
+                <div class="alert-details-preview" style="margin-top: var(--spacing-sm); font-size: var(--font-size-sm); color: var(--dark-gray);">
+                    <i class="fas fa-info-circle"></i> {{ alert.details|truncate(100) }}
+                </div>
+                {% endif %}
+            </div>
+            
+            <div class="alert-actions">
+                <input type="checkbox" class="alert-select" value="{{ alert.id }}" onchange="updateSelection()" style="margin-right: var(--spacing-xs);">
+                
+                {% if not alert.resolved %}
+                <button class="alert-action-btn resolve" onclick="resolveAlert({{ alert.id }})" title="Resolve">
+                    <i class="fas fa-check"></i>
+                </button>
+                {% endif %}
+                
+                <button class="alert-action-btn" onclick="viewAlertDetails({{ alert.id }})" title="View Details">
+                    <i class="fas fa-eye"></i>
+                </button>
+                
+                <button class="alert-action-btn" onclick="snoozeAlert({{ alert.id }})" title="Snooze">
+                    <i class="fas fa-clock"></i>
+                </button>
+                
+                <button class="alert-action-btn delete" onclick="deleteAlert({{ alert.id }})" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <h3 class="empty-title">All Clear!</h3>
+        <p class="empty-description">
+            No alerts match your current filters. All systems are operating normally.
+        </p>
+        <button class="btn btn-primary" onclick="resetFilters()">
+            <i class="fas fa-undo"></i> Reset Filters
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages and total_pages > 1 %}
+<div class="pagination">
+    <div class="pagination-item {% if page == 1 %}disabled{% endif %}" onclick="changePage({{ page-1 }})">
+        <i class="fas fa-chevron-left"></i>
+    </div>
+    
+    {% for p in range(1, total_pages + 1) %}
+        {% if p >= page-2 and p <= page+2 %}
+        <div class="pagination-item {% if p == page %}active{% endif %}" onclick="changePage({{ p }})">
+            {{ p }}
+        </div>
+        {% endif %}
+    {% endfor %}
+    
+    <div class="pagination-item {% if page == total_pages %}disabled{% endif %}" onclick="changePage({{ page+1 }})">
+        <i class="fas fa-chevron-right"></i>
+    </div>
+</div>
+{% endif %}
+
+<!-- Alert Details Modal -->
+<div class="modal-overlay" id="alert-details-modal" style="display: none;">
+    <div class="modal alert-details-modal">
+        <div class="modal-header">
+            <h5 class="modal-title">Alert Details</h5>
+            <button type="button" class="modal-close" onclick="closeAlertDetails()">&times;</button>
+        </div>
+        
+        <div class="modal-body">
+            <div class="details-section">
+                <div class="details-title">Overview</div>
+                <div class="details-content" id="detail-title"></div>
+            </div>
+            
+            <div class="details-section">
+                <div class="details-title">Message</div>
+                <div class="details-content" id="detail-message"></div>
+            </div>
+            
+            <div class="details-grid">
+                <div class="details-item">
+                    <span class="details-item-label">Facility</span>
+                    <span class="details-item-value" id="detail-facility"></span>
+                </div>
+                <div class="details-item">
+                    <span class="details-item-label">Severity</span>
+                    <span class="details-item-value" id="detail-severity"></span>
+                </div>
+                <div class="details-item">
+                    <span class="details-item-label">Type</span>
+                    <span class="details-item-value" id="detail-type"></span>
+                </div>
+                <div class="details-item">
+                    <span class="details-item-label">Created</span>
+                    <span class="details-item-value" id="detail-created"></span>
+                </div>
+                <div class="details-item">
+                    <span class="details-item-label">Week/Year</span>
+                    <span class="details-item-value" id="detail-week"></span>
+                </div>
+                <div class="details-item">
+                    <span class="details-item-label">Status</span>
+                    <span class="details-item-value" id="detail-status"></span>
+                </div>
+            </div>
+            
+            <div class="details-section">
+                <div class="details-title">Additional Details</div>
+                <div class="details-content" id="detail-additional"></div>
+            </div>
+        </div>
+        
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeAlertDetails()">Close</button>
+            <button type="button" class="btn btn-success" id="resolve-detail-btn" onclick="resolveCurrentAlert()">
+                <i class="fas fa-check"></i> Resolve
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Snooze Modal -->
+<div class="modal-overlay" id="snooze-modal" style="display: none;">
+    <div class="modal modal-sm">
+        <div class="modal-header">
+            <h5 class="modal-title">Snooze Alert</h5>
+            <button type="button" class="modal-close" onclick="closeSnoozeModal()">&times;</button>
+        </div>
+        
+        <div class="modal-body">
+            <p>Snooze this alert for:</p>
+            <div class="form-group">
+                <select class="form-select" id="snooze-duration">
+                    <option value="1">1 hour</option>
+                    <option value="3">3 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="12">12 hours</option>
+                    <option value="24">24 hours</option>
+                    <option value="48">48 hours</option>
+                    <option value="168">1 week</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeSnoozeModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="confirmSnooze()">Snooze</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ============================================================================
+    // STATE MANAGEMENT
+    // ============================================================================
+    
+    let currentTab = 'all';
+    let selectedAlerts = new Set();
+    let currentAlertId = null;
+    let currentPage = {% if page %}{{ page }}{% else %}1{% endif %};
+    let totalPages = {% if total_pages %}{{ total_pages }}{% else %}1{% endif %};
+    
+    // ============================================================================
+    // TAB SWITCHING
+    // ============================================================================
+    
+    function switchAlertTab(tab) {
+        currentTab = tab;
+        
+        document.querySelectorAll('.alert-tab').forEach(t => {
+            t.classList.remove('active');
+        });
+        event.target.closest('.alert-tab').classList.add('active');
+        
+        applyFilters();
+    }
+    
+    // ============================================================================
+    // FILTERING
+    // ============================================================================
+    
+    function applyFilters() {
+        const severity = document.getElementById('severity-filter').value;
+        const type = document.getElementById('type-filter').value;
+        const facility = document.getElementById('facility-filter').value;
+        const dateRange = document.getElementById('date-filter').value;
+        
+        // Build query string
+        const params = new URLSearchParams();
+        if (currentTab !== 'all') params.append('severity', currentTab);
+        if (severity !== 'all') params.append('severity', severity);
+        if (type !== 'all') params.append('type', type);
+        if (facility !== 'all') params.append('facility', facility);
+        if (dateRange !== 'all') params.append('date_range', dateRange);
+        params.append('page', '1');
+        
+        window.location.href = '/alerts?' + params.toString();
+    }
+    
+    function resetFilters() {
+        window.location.href = '/alerts';
+    }
+    
+    function changePage(page) {
+        if (page < 1 || page > totalPages) return;
+        
+        const params = new URLSearchParams(window.location.search);
+        params.set('page', page);
+        window.location.href = '/alerts?' + params.toString();
+    }
+    
+    // ============================================================================
+    // BULK SELECTION
+    // ============================================================================
+    
+    function updateSelection() {
+        const checkboxes = document.querySelectorAll('.alert-select');
+        selectedAlerts.clear();
+        
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                selectedAlerts.add(parseInt(cb.value));
+            }
+        });
+        
+        const count = selectedAlerts.size;
+        document.getElementById('selected-count').textContent = count;
+        document.getElementById('bulk-actions').style.display = count > 0 ? 'flex' : 'none';
+    }
+    
+    function clearSelection() {
+        document.querySelectorAll('.alert-select').forEach(cb => {
+            cb.checked = false;
+        });
+        selectedAlerts.clear();
+        document.getElementById('bulk-actions').style.display = 'none';
+    }
+    
+    function bulkResolve() {
+        if (selectedAlerts.size === 0) return;
+        
+        showConfirm('Resolve Alerts', 
+            'Are you sure you want to resolve ' + selectedAlerts.size + ' selected alert(s)?',
+            function() {
+                fetch('/api/alerts/bulk/resolve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': CSRF_TOKEN
+                    },
+                    body: JSON.stringify({ alert_ids: Array.from(selectedAlerts) })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification(data.resolved + ' alerts resolved', 'success');
+                    clearSelection();
+                    setTimeout(() => location.reload(), 1500);
+                })
+                .catch(error => {
+                    showNotification('Error resolving alerts', 'danger');
+                });
+            }
+        );
+    }
+    
+    function bulkAcknowledge() {
+        if (selectedAlerts.size === 0) return;
+        
+        fetch('/api/alerts/bulk/acknowledge', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN
+            },
+            body: JSON.stringify({ alert_ids: Array.from(selectedAlerts) })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showNotification(data.acknowledged + ' alerts acknowledged', 'success');
+            clearSelection();
+        })
+        .catch(error => {
+            showNotification('Error acknowledging alerts', 'danger');
+        });
+    }
+    
+    function bulkExport() {
+        if (selectedAlerts.size === 0) return;
+        
+        window.location.href = '/api/alerts/export?ids=' + Array.from(selectedAlerts).join(',');
+    }
+    
+    // ============================================================================
+    // ALERT ACTIONS
+    // ============================================================================
+    
+    function resolveAlert(id) {
+        showConfirm('Resolve Alert', 'Mark this alert as resolved?', function() {
+            fetch('/api/alerts/' + id + '/resolve', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': CSRF_TOKEN
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification('Alert resolved', 'success');
+                setTimeout(() => location.reload(), 1500);
+            })
+            .catch(error => {
+                showNotification('Error resolving alert', 'danger');
+            });
+        });
+    }
+    
+    function resolveAllAlerts() {
+        showConfirm('Resolve All Alerts', 'Are you sure you want to resolve all active alerts?', function() {
+            fetch('/api/alerts/resolve-all', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': CSRF_TOKEN
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification(data.resolved + ' alerts resolved', 'success');
+                setTimeout(() => location.reload(), 1500);
+            })
+            .catch(error => {
+                showNotification('Error resolving alerts', 'danger');
+            });
+        });
+    }
+    
+    let snoozeAlertId = null;
+    
+    function snoozeAlert(id) {
+        snoozeAlertId = id;
+        document.getElementById('snooze-modal').style.display = 'flex';
+    }
+    
+    function closeSnoozeModal() {
+        document.getElementById('snooze-modal').style.display = 'none';
+        snoozeAlertId = null;
+    }
+    
+    function confirmSnooze() {
+        const hours = document.getElementById('snooze-duration').value;
+        
+        fetch('/api/alerts/' + snoozeAlertId + '/snooze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN
+            },
+            body: JSON.stringify({ hours: parseInt(hours) })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showNotification('Alert snoozed for ' + hours + ' hours', 'success');
+            closeSnoozeModal();
+            setTimeout(() => location.reload(), 1500);
+        })
+        .catch(error => {
+            showNotification('Error snoozing alert', 'danger');
+            closeSnoozeModal();
+        });
+    }
+    
+    function deleteAlert(id) {
+        showConfirm('Delete Alert', 'Are you sure you want to delete this alert? This action cannot be undone.', function() {
+            fetch('/api/alerts/' + id, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-Token': CSRF_TOKEN
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification('Alert deleted', 'success');
+                setTimeout(() => location.reload(), 1500);
+            })
+            .catch(error => {
+                showNotification('Error deleting alert', 'danger');
+            });
+        });
+    }
+    
+    // ============================================================================
+    // ALERT DETAILS
+    // ============================================================================
+    
+    function viewAlertDetails(id) {
+        currentAlertId = id;
+        
+        fetch('/api/alerts/' + id)
+            .then(response => response.json())
+            .then(alert => {
+                document.getElementById('detail-title').textContent = alert.title;
+                document.getElementById('detail-message').textContent = alert.message;
+                document.getElementById('detail-facility').textContent = alert.facility_name;
+                document.getElementById('detail-severity').textContent = alert.severity.toUpperCase();
+                document.getElementById('detail-type').textContent = alert.type.replace(/_/g, ' ').toUpperCase();
+                document.getElementById('detail-created').textContent = new Date(alert.created_at).toLocaleString();
+                document.getElementById('detail-week').textContent = alert.week && alert.year ? `Week ${alert.week}, ${alert.year}` : 'N/A';
+                document.getElementById('detail-status').textContent = alert.resolved ? 'Resolved' : 'Active';
+                document.getElementById('detail-additional').textContent = alert.details || 'No additional details';
+                
+                document.getElementById('resolve-detail-btn').style.display = alert.resolved ? 'none' : 'inline-block';
+                
+                document.getElementById('alert-details-modal').style.display = 'flex';
+            })
+            .catch(error => {
+                showNotification('Error loading alert details', 'danger');
+            });
+    }
+    
+    function closeAlertDetails() {
+        document.getElementById('alert-details-modal').style.display = 'none';
+        currentAlertId = null;
+    }
+    
+    function resolveCurrentAlert() {
+        if (currentAlertId) {
+            resolveAlert(currentAlertId);
+            closeAlertDetails();
+        }
+    }
+    
+    // ============================================================================
+    // REFRESH
+    // ============================================================================
+    
+    function refreshAlerts() {
+        showNotification('Refreshing alerts...', 'info');
+        location.reload();
+    }
+    
+    // ============================================================================
+    // EXPORT
+    // ============================================================================
+    
+    function exportAlerts() {
+        const params = new URLSearchParams(window.location.search);
+        window.location.href = '/api/alerts/export/all?' + params.toString();
+    }
+    
+    // ============================================================================
+    // AUTO-REFRESH (every 5 minutes)
+    // ============================================================================
+    
+    setInterval(function() {
+        if (!document.hidden) {
+            refreshAlerts();
+        }
+    }, 300000);
+    
+    // ============================================================================
+    // KEYBOARD SHORTCUTS
+    // ============================================================================
+    
+    document.addEventListener('keydown', function(e) {
+        // R - refresh
+        if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            refreshAlerts();
+        }
+        
+        // Escape - close modals
+        if (e.key === 'Escape') {
+            closeAlertDetails();
+            closeSnoozeModal();
+        }
+        
+        // A - select all (with Ctrl)
+        if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            document.querySelectorAll('.alert-select').forEach(cb => {
+                cb.checked = true;
+            });
+            updateSelection();
+        }
+    });
+</script>
+{% endblock %}

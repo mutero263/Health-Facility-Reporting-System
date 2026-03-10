@@ -1,0 +1,520 @@
+{% extends "base.html" %}
+{% block title %}Facilities - Health Facility Reporting System{% endblock %}
+{% block page_title %}Facility Management{% endblock %}
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+<li class="breadcrumb-item active">Facilities</li>
+{% endblock %}
+{% block page_actions %}
+<!-- ✅ Removed session.role check: Everyone can add a facility -->
+<button type="button" class="btn btn-primary" onclick="openAddFacilityModal()">
+<i class="fas fa-plus"></i> Add Facility
+</button>
+<button type="button" class="btn btn-outline" onclick="exportFacilities()">
+<i class="fas fa-download"></i> Export
+</button>
+<button type="button" class="btn btn-outline" onclick="refreshData()">
+<i class="fas fa-sync-alt"></i> Refresh
+</button>
+{% endblock %}
+{% block extra_css %}
+<style>
+/* Facility Stats Cards */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-lg); margin-bottom: var(--spacing-xl); }
+.stat-card { background: var(--white); border-radius: var(--border-radius-lg); padding: var(--spacing-lg); box-shadow: var(--shadow-sm); display: flex; align-items: center; gap: var(--spacing-md); transition: var(--transition-normal); }
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.stat-icon { width: 50px; height: 50px; border-radius: var(--border-radius-circle); display: flex; align-items: center; justify-content: center; font-size: var(--font-size-xl); }
+.stat-icon.primary { background: var(--primary-light); color: var(--primary-dark); }
+.stat-icon.success { background: var(--success-light); color: var(--success-color); }
+.stat-icon.warning { background: var(--warning-light); color: var(--warning-color); }
+.stat-icon.info { background: var(--info-light); color: var(--info-color); }
+.stat-content { flex: 1; }
+.stat-label { font-size: var(--font-size-sm); color: var(--dark-gray); margin-bottom: var(--spacing-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-value { font-size: var(--font-size-xl); font-weight: 700; color: var(--darker-gray); line-height: 1.2; }
+.stat-trend { font-size: var(--font-size-sm); margin-top: var(--spacing-xs); }
+.stat-trend.positive { color: var(--success-color); }
+.stat-trend.negative { color: var(--danger-color); }
+/* Filter Bar */
+.filter-bar { background: var(--white); border-radius: var(--border-radius-lg); padding: var(--spacing-lg); margin-bottom: var(--spacing-lg); box-shadow: var(--shadow-sm); display: flex; flex-wrap: wrap; gap: var(--spacing-md); align-items: center; }
+.filter-group { flex: 1; min-width: 200px; }
+.search-box { position: relative; flex: 2; min-width: 250px; }
+.search-box i { position: absolute; left: var(--spacing-md); top: 50%; transform: translateY(-50%); color: var(--dark-gray); }
+.search-box input { width: 100%; padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) calc(var(--spacing-md) * 2 + 20px); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: var(--font-size-base); }
+.search-box input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(46, 134, 171, 0.1); }
+.filter-actions { display: flex; gap: var(--spacing-sm); }
+/* Facility Grid */
+.facility-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: var(--spacing-lg); margin-bottom: var(--spacing-xl); }
+.facility-card { background: var(--white); border-radius: var(--border-radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); transition: var(--transition-normal); cursor: pointer; position: relative; border: 1px solid transparent; }
+.facility-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--primary-color); }
+.facility-card.featured { border: 2px solid var(--primary-color); }
+.facility-header { padding: var(--spacing-lg); background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%); color: var(--white); position: relative; }
+.facility-type-badge { position: absolute; top: var(--spacing-md); right: var(--spacing-md); background: rgba(255, 255, 255, 0.2); padding: var(--spacing-xs) var(--spacing-md); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); backdrop-filter: blur(5px); }
+.facility-name { font-size: var(--font-size-lg); font-weight: 600; margin-bottom: var(--spacing-xs); padding-right: 80px; }
+.facility-location { display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); opacity: 0.9; }
+.facility-location i { font-size: var(--font-size-sm); }
+.facility-body { padding: var(--spacing-lg); }
+.facility-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
+.facility-stat { text-align: center; padding: var(--spacing-sm); background: var(--light-gray); border-radius: var(--border-radius-md); }
+.facility-stat-value { font-size: var(--font-size-lg); font-weight: 700; color: var(--primary-color); line-height: 1.2; }
+.facility-stat-label { font-size: var(--font-size-xs); color: var(--dark-gray); text-transform: uppercase; letter-spacing: 0.5px; }
+.facility-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md); padding-bottom: var(--spacing-md); border-bottom: 1px solid var(--border-color); }
+.facility-meta-item { display: flex; align-items: center; gap: var(--spacing-xs); font-size: var(--font-size-sm); color: var(--dark-gray); }
+.facility-meta-item i { color: var(--primary-color); }
+.facility-progress { margin-bottom: var(--spacing-md); }
+.progress-header { display: flex; justify-content: space-between; margin-bottom: var(--spacing-xs); font-size: var(--font-size-sm); }
+.progress-bar { height: 6px; background: var(--light-gray); border-radius: var(--border-radius-sm); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--primary-gradient); border-radius: var(--border-radius-sm); transition: width 0.3s ease; }
+.facility-footer { padding: var(--spacing-md) var(--spacing-lg); background: var(--light-gray); display: flex; justify-content: space-between; align-items: center; }
+.facility-status { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-md); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); font-weight: 500; }
+.facility-status.active { background: var(--success-light); color: var(--success-color); }
+.facility-status.inactive { background: var(--danger-light); color: var(--danger-color); }
+.facility-status.warning { background: var(--warning-light); color: var(--warning-color); }
+.facility-actions { display: flex; gap: var(--spacing-xs); }
+.facility-actions button { width: 32px; height: 32px; border-radius: var(--border-radius-sm); border: none; background: var(--white); color: var(--dark-gray); cursor: pointer; transition: var(--transition-fast); display: flex; align-items: center; justify-content: center; }
+.facility-actions button:hover { background: var(--primary-color); color: var(--white); }
+/* Table View */
+.table-view { display: none; background: var(--white); border-radius: var(--border-radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.table-view.active { display: block; animation: fadeIn 0.3s ease; }
+.facility-table { width: 100%; border-collapse: collapse; }
+.facility-table th { padding: var(--spacing-md); text-align: left; background: var(--light-gray); font-weight: 600; color: var(--darker-gray); cursor: pointer; user-select: none; }
+.facility-table th:hover { background: var(--medium-gray); }
+.facility-table th i { margin-left: var(--spacing-xs); font-size: var(--font-size-sm); opacity: 0.5; }
+.facility-table td { padding: var(--spacing-md); border-bottom: 1px solid var(--border-color); }
+.facility-table tr:hover td { background: var(--light-gray); }
+.facility-table .status-badge { display: inline-block; padding: var(--spacing-xs) var(--spacing-md); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); font-weight: 500; }
+/* View Toggle */
+.view-toggle { display: flex; gap: var(--spacing-xs); background: var(--light-gray); padding: var(--spacing-xs); border-radius: var(--border-radius-md); }
+.view-toggle button { padding: var(--spacing-sm) var(--spacing-md); border: none; background: transparent; border-radius: var(--border-radius-sm); cursor: pointer; color: var(--dark-gray); transition: var(--transition-fast); display: flex; align-items: center; gap: var(--spacing-xs); }
+.view-toggle button:hover { background: var(--white); color: var(--primary-color); }
+.view-toggle button.active { background: var(--white); color: var(--primary-color); box-shadow: var(--shadow-sm); }
+/* Map View */
+.map-view { display: none; height: 600px; background: var(--light-gray); border-radius: var(--border-radius-lg); overflow: hidden; position: relative; }
+.map-view.active { display: block; animation: fadeIn 0.3s ease; }
+#facility-map { width: 100%; height: 100%; }
+.map-legend { position: absolute; bottom: var(--spacing-lg); right: var(--spacing-lg); background: var(--white); padding: var(--spacing-md); border-radius: var(--border-radius-md); box-shadow: var(--shadow-md); z-index: 1000; }
+.map-legend-item { display: flex; align-items: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-xs); font-size: var(--font-size-sm); }
+.map-legend-color { width: 12px; height: 12px; border-radius: var(--border-radius-sm); }
+/* Pagination */
+.pagination { display: flex; justify-content: center; align-items: center; gap: var(--spacing-xs); margin-top: var(--spacing-xl); }
+.pagination-item { min-width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: var(--border-radius-md); background: var(--white); color: var(--dark-gray); cursor: pointer; transition: var(--transition-fast); border: 1px solid var(--border-color); }
+.pagination-item:hover { background: var(--primary-light); color: var(--primary-color); border-color: var(--primary-color); }
+.pagination-item.active { background: var(--primary-color); color: var(--white); border-color: var(--primary-color); }
+.pagination-item.disabled { opacity: 0.5; cursor: not-allowed; }
+/* Bulk Actions */
+.bulk-actions { background: var(--white); border-radius: var(--border-radius-lg); padding: var(--spacing-md); margin-bottom: var(--spacing-lg); box-shadow: var(--shadow-sm); display: flex; align-items: center; gap: var(--spacing-md); animation: slideDown 0.3s ease; }
+.bulk-actions .selected-count { font-weight: 600; color: var(--primary-color); }
+.bulk-actions .actions { display: flex; gap: var(--spacing-sm); margin-left: auto; }
+/* Facility Modal */
+.facility-modal { max-width: 600px; }
+.modal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-md); }
+.coordinates-group { grid-column: span 2; }
+.coordinates-inputs { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-md); }
+/* Empty State */
+.empty-state { text-align: center; padding: var(--spacing-xxl); background: var(--white); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-sm); }
+.empty-icon { font-size: 4rem; color: var(--primary-light); margin-bottom: var(--spacing-lg); }
+.empty-title { font-size: var(--font-size-xl); font-weight: 600; color: var(--darker-gray); margin-bottom: var(--spacing-md); }
+.empty-description { color: var(--dark-gray); margin-bottom: var(--spacing-xl); max-width: 400px; margin-left: auto; margin-right: auto; }
+/* Animations */
+@keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* Responsive */
+@media (max-width: 768px) {
+.filter-bar { flex-direction: column; }
+.search-box { width: 100%; }
+.facility-grid { grid-template-columns: 1fr; }
+.modal-grid { grid-template-columns: 1fr; }
+.coordinates-inputs { grid-template-columns: 1fr; }
+.coordinates-group { grid-column: span 1; }
+.view-toggle button span { display: none; }
+.bulk-actions { flex-wrap: wrap; }
+.bulk-actions .actions { width: 100%; justify-content: flex-end; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<!-- Stats Cards -->
+<div class="stats-grid">
+<div class="stat-card">
+<div class="stat-icon primary"><i class="fas fa-hospital"></i></div>
+<div class="stat-content">
+<div class="stat-label">Total Facilities</div>
+<div class="stat-value">{% if stats %}{{ stats.total_facilities|default(0) }}{% else %}0{% endif %}</div>
+<div class="stat-trend positive"><i class="fas fa-arrow-up"></i> {% if stats %}{{ stats.new_facilities|default(0) }}{% else %}0{% endif %} this month</div>
+</div>
+</div>
+<div class="stat-card">
+<div class="stat-icon success"><i class="fas fa-check-circle"></i></div>
+<div class="stat-content">
+<div class="stat-label">Active Facilities</div>
+<div class="stat-value">{% if stats %}{{ stats.active_facilities|default(0) }}{% else %}0{% endif %}</div>
+<div class="stat-trend positive"><i class="fas fa-chart-line"></i> {% if stats %}{{ stats.active_percentage|default(0) }}{% else %}0{% endif %}% of total</div>
+</div>
+</div>
+<div class="stat-card">
+<div class="stat-icon warning"><i class="fas fa-clock"></i></div>
+<div class="stat-content">
+<div class="stat-label">Reporting This Week</div>
+<div class="stat-value">{% if stats %}{{ stats.reporting_this_week|default(0) }}{% else %}0{% endif %}</div>
+<div class="stat-trend {% if stats and stats.reporting_change and stats.reporting_change > 0 %}positive{% else %}negative{% endif %}">
+<i class="fas fa-{% if stats and stats.reporting_change and stats.reporting_change > 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+{% if stats %}{{ stats.reporting_change|default(0) }}{% else %}0{% endif %}% vs last week
+</div>
+</div>
+</div>
+<div class="stat-card">
+<div class="stat-icon info"><i class="fas fa-users"></i></div>
+<div class="stat-content">
+<div class="stat-label">Total Population</div>
+<div class="stat-value">{% if stats %}{{ stats.total_population|default(0)|number_format }}{% else %}0{% endif %}</div>
+<div class="stat-trend"><i class="fas fa-users"></i> Served</div>
+</div>
+</div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+<div class="search-box">
+<i class="fas fa-search"></i>
+<input type="text" id="search-input" placeholder="Search facilities by name, district, type..." value="{% if search_query %}{{ search_query }}{% endif %}">
+</div>
+<div class="filter-group">
+<select class="form-select" id="district-filter">
+<option value="">All Districts</option>
+{% if districts %}{% for district in districts %}<option value="{{ district }}" {% if district == selected_district %}selected{% endif %}>{{ district }}</option>{% endfor %}{% endif %}
+</select>
+</div>
+<div class="filter-group">
+<select class="form-select" id="type-filter">
+<option value="">All Types</option>
+{% if facility_types %}{% for type in facility_types %}<option value="{{ type.id }}" {% if type.id == selected_type %}selected{% endif %}>{{ type.name }}</option>{% endfor %}{% endif %}
+</select>
+</div>
+<div class="filter-group">
+<select class="form-select" id="status-filter">
+<option value="">All Status</option>
+<option value="active" {% if selected_status == 'active' %}selected{% endif %}>Active</option>
+<option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>Inactive</option>
+<option value="warning" {% if selected_status == 'warning' %}selected{% endif %}>Needs Attention</option>
+</select>
+</div>
+<div class="filter-actions">
+<button type="button" class="btn btn-outline" onclick="clearFilters()"><i class="fas fa-times"></i> Clear</button>
+<button type="button" class="btn btn-primary" onclick="applyFilters()"><i class="fas fa-filter"></i> Apply</button>
+</div>
+</div>
+
+<!-- Bulk Actions -->
+<div class="bulk-actions" id="bulk-actions" style="display: none;">
+<div><span class="selected-count" id="selected-count">0</span> facilities selected</div>
+<div class="actions">
+<button type="button" class="btn btn-sm btn-outline" onclick="bulkActivate()"><i class="fas fa-check-circle"></i> Activate</button>
+<button type="button" class="btn btn-sm btn-outline" onclick="bulkDeactivate()"><i class="fas fa-times-circle"></i> Deactivate</button>
+<button type="button" class="btn btn-sm btn-outline" onclick="bulkExport()"><i class="fas fa-download"></i> Export</button>
+<!-- ✅ Removed Admin-only Delete button -->
+<button type="button" class="btn btn-sm btn-outline" onclick="clearSelection()"><i class="fas fa-times"></i> Clear</button>
+</div>
+</div>
+
+<!-- View Toggle -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="view-toggle">
+<button type="button" class="active" onclick="switchView('grid')" id="view-grid"><i class="fas fa-th-large"></i> <span>Grid</span></button>
+<button type="button" onclick="switchView('table')" id="view-table"><i class="fas fa-table"></i> <span>Table</span></button>
+<button type="button" onclick="switchView('map')" id="view-map"><i class="fas fa-map-marker-alt"></i> <span>Map</span></button>
+</div>
+<div class="d-flex gap-2">
+<select class="form-select form-select-sm" id="sort-by" style="width: auto;" onchange="applyFilters()">
+<option value="name">Sort by Name</option>
+<option value="type">Sort by Type</option>
+<option value="district">Sort by District</option>
+<option value="reporting">Sort by Reporting Rate</option>
+<option value="population">Sort by Population</option>
+</select>
+<select class="form-select form-select-sm" id="sort-order" style="width: auto;" onchange="applyFilters()">
+<option value="asc">Ascending</option>
+<option value="desc">Descending</option>
+</select>
+</div>
+</div>
+
+<!-- Grid View -->
+<div class="facility-grid" id="grid-view">
+{% if facilities %}
+{% for facility in facilities %}
+<div class="facility-card {% if facility.featured %}featured{% endif %}" onclick="viewFacility({{ facility.id }})" data-facility-id="{{ facility.id }}">
+<div class="facility-header">
+<span class="facility-type-badge">{{ facility.type|upper }}</span>
+<h3 class="facility-name">{{ facility.name }}</h3>
+<div class="facility-location"><i class="fas fa-map-marker-alt"></i><span>{{ facility.district }}, {{ facility.province }}</span></div>
+</div>
+<div class="facility-body">
+<div class="facility-stats">
+<div class="facility-stat"><div class="facility-stat-value">{{ facility.reports_count|default(0) }}</div><div class="facility-stat-label">Reports</div></div>
+<div class="facility-stat"><div class="facility-stat-value">{% if facility.population %}{{ facility.population|number_format }}{% else %}0{% endif %}</div><div class="facility-stat-label">Population</div></div>
+</div>
+<div class="facility-meta">
+<div class="facility-meta-item"><i class="fas fa-calendar-check"></i><span>Last report: {% if facility.last_report %}{{ facility.last_report }}{% else %}Never{% endif %}</span></div>
+<div class="facility-meta-item"><i class="fas fa-chart-line"></i><span>{% if facility.reporting_rate %}{{ facility.reporting_rate }}{% else %}0{% endif %}% rate</span></div>
+</div>
+<div class="facility-progress">
+<div class="progress-header"><span>Reporting Compliance</span><span>{% if facility.reporting_rate %}{{ facility.reporting_rate }}{% else %}0{% endif %}%</span></div>
+<div class="progress-bar"><div class="progress-fill" style="width: {% if facility.reporting_rate %}{{ facility.reporting_rate }}{% else %}0{% endif %}%;"></div></div>
+</div>
+</div>
+<div class="facility-footer">
+<div class="facility-status {% if facility.active %}active{% else %}inactive{% endif %}"><i class="fas fa-circle"></i> {% if facility.active %}Active{% else %}Inactive{% endif %}</div>
+<div class="facility-actions" onclick="event.stopPropagation()">
+<button onclick="viewFacility({{ facility.id }})" title="View Details"><i class="fas fa-eye"></i></button>
+<button onclick="editFacility({{ facility.id }})" title="Edit"><i class="fas fa-edit"></i></button>
+<button onclick="showReports({{ facility.id }})" title="View Reports"><i class="fas fa-file-alt"></i></button>
+<!-- ✅ Removed Admin-only Delete button -->
+</div>
+</div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state" style="grid-column: 1/-1;">
+<div class="empty-icon"><i class="fas fa-building"></i></div>
+<h3 class="empty-title">No Facilities Found</h3>
+<p class="empty-description">{% if search_query or selected_district or selected_type or selected_status %}No facilities match your search criteria. Try adjusting your filters.{% else %}Get started by adding your first facility.{% endif %}</p>
+<!-- ✅ Removed Admin-only Add button here too, using page action instead -->
+</div>
+{% endif %}
+</div>
+
+<!-- Table View -->
+<div class="table-view" id="table-view">
+<table class="facility-table">
+<thead>
+<tr>
+<th style="width: 30px;"><input type="checkbox" id="select-all" onclick="toggleSelectAll()"></th>
+<th onclick="sortTable('name')">Name <i class="fas fa-sort"></i></th>
+<th onclick="sortTable('type')">Type <i class="fas fa-sort"></i></th>
+<th onclick="sortTable('district')">District <i class="fas fa-sort"></i></th>
+<th onclick="sortTable('province')">Province <i class="fas fa-sort"></i></th>
+<th onclick="sortTable('reports')">Reports <i class="fas fa-sort"></i></th>
+<th onclick="sortTable('last_report')">Last Report <i class="fas fa-sort"></i></th>
+<th onclick="sortTable('status')">Status <i class="fas fa-sort"></i></th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% if facilities %}
+{% for facility in facilities %}
+<tr>
+<td><input type="checkbox" class="facility-select" value="{{ facility.id }}" onchange="updateSelection()"></td>
+<td>{{ facility.name }}</td>
+<td><span class="status-badge" style="background: var(--primary-light);">{{ facility.type|upper }}</span></td>
+<td>{{ facility.district }}</td>
+<td>{{ facility.province }}</td>
+<td>{{ facility.reports_count|default(0) }}</td>
+<td>{% if facility.last_report %}{{ facility.last_report }}{% else %}Never{% endif %}</td>
+<td><span class="status-badge {% if facility.active %}active{% else %}inactive{% endif %}">{% if facility.active %}Active{% else %}Inactive{% endif %}</span></td>
+<td>
+<div class="facility-actions">
+<button onclick="viewFacility({{ facility.id }})" title="View Details"><i class="fas fa-eye"></i></button>
+<button onclick="editFacility({{ facility.id }})" title="Edit"><i class="fas fa-edit"></i></button>
+<!-- ✅ Removed Admin-only Delete button -->
+</div>
+</td>
+</tr>
+{% endfor %}
+{% endif %}
+</tbody>
+</table>
+</div>
+
+<!-- Map View -->
+<div class="map-view" id="map-view">
+<div id="facility-map"></div>
+<div class="map-legend">
+<div class="map-legend-item"><div class="map-legend-color" style="background: var(--success-color);"></div><span>Active Facility</span></div>
+<div class="map-legend-item"><div class="map-legend-color" style="background: var(--warning-color);"></div><span>Needs Attention</span></div>
+<div class="map-legend-item"><div class="map-legend-color" style="background: var(--danger-color);"></div><span>Inactive</span></div>
+<div class="map-legend-item"><div class="map-legend-color" style="background: var(--primary-color);"></div><span>High Performing</span></div>
+</div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages and total_pages > 1 %}
+<div class="pagination">
+<div class="pagination-item {% if page == 1 %}disabled{% endif %}" onclick="changePage({{ page-1 }})"><i class="fas fa-chevron-left"></i></div>
+{% set start_page = [1, page-2]|max %}
+{% set end_page = [total_pages, page+2]|min %}
+{% for p in range(start_page, end_page + 1) %}
+<div class="pagination-item {% if p == page %}active{% endif %}" onclick="changePage({{ p }})">{{ p }}</div>
+{% endfor %}
+<div class="pagination-item {% if page == total_pages %}disabled{% endif %}" onclick="changePage({{ page+1 }})"><i class="fas fa-chevron-right"></i></div>
+</div>
+{% endif %}
+
+<!-- Add/Edit Facility Modal -->
+<div class="modal-overlay" id="facility-modal" style="display: none;">
+<div class="modal facility-modal">
+<div class="modal-header">
+<h5 class="modal-title" id="modal-title">Add New Facility</h5>
+<button type="button" class="modal-close" onclick="closeFacilityModal()">&times;</button>
+</div>
+<div class="modal-body">
+<form id="facility-form">
+<input type="hidden" id="facility-id">
+<div class="form-group"><label class="form-label">Facility Name</label><input type="text" class="form-control" id="facility-name" required></div>
+<div class="modal-grid">
+<div class="form-group"><label class="form-label">Type</label><select class="form-select" id="facility-type" required><option value="">Select type...</option>{% if facility_types %}{% for type in facility_types %}<option value="{{ type.id }}">{{ type.name }}</option>{% endfor %}{% endif %}</select></div>
+<div class="form-group"><label class="form-label">Catchment Population</label><input type="number" class="form-control" id="facility-population" min="0"></div>
+<div class="form-group"><label class="form-label">District</label><input type="text" class="form-control" id="facility-district" required></div>
+<div class="form-group"><label class="form-label">Province</label><input type="text" class="form-control" id="facility-province" required></div>
+</div>
+<div class="coordinates-group">
+<label class="form-label">Coordinates</label>
+<div class="coordinates-inputs">
+<div class="form-group"><input type="number" class="form-control" id="facility-latitude" placeholder="Latitude" step="any"></div>
+<div class="form-group"><input type="number" class="form-control" id="facility-longitude" placeholder="Longitude" step="any"></div>
+</div>
+</div>
+<div class="form-group"><label class="form-label"><input type="checkbox" id="facility-active" checked> Active Facility</label></div>
+</form>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn btn-outline" onclick="closeFacilityModal()">Cancel</button>
+<button type="button" class="btn btn-primary" onclick="saveFacility()" id="save-btn"><i class="fas fa-save"></i> Save Facility</button>
+</div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script>
+let currentView = 'grid';
+let selectedFacilities = new Set();
+let map = null;
+let mapMarkers = [];
+let currentPage = {% if page %}{{ page }}{% else %}1{% endif %};
+let totalPages = {% if total_pages %}{{ total_pages }}{% else %}1{% endif %};
+
+function switchView(view) {
+currentView = view;
+document.querySelectorAll('.view-toggle button').forEach(btn => btn.classList.remove('active'));
+document.getElementById('view-' + view).classList.add('active');
+document.getElementById('grid-view').style.display = view === 'grid' ? 'grid' : 'none';
+document.getElementById('table-view').style.display = view === 'table' ? 'block' : 'none';
+document.getElementById('map-view').style.display = view === 'map' ? 'block' : 'none';
+if (view === 'map' && !map) initMap();
+}
+
+function initMap() {
+map = L.map('facility-map').setView([-19.0, 29.0], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
+{% if facilities %}{% for facility in facilities %}{% if facility.latitude and facility.longitude %}
+(function() {
+let marker = L.marker([{{ facility.latitude }}, {{ facility.longitude }}]).addTo(map);
+let status = '{% if facility.active %}active{% else %}inactive{% endif %}';
+marker.bindPopup(`<b>{{ facility.name }}</b><br>Type: {{ facility.type }}<br>District: {{ facility.district }}<br>Status: ${status}<br><a href="#" onclick="viewFacility({{ facility.id }})">View Details</a>`);
+mapMarkers.push(marker);
+})();
+{% endif %}{% endfor %}{% endif %}
+}
+
+function applyFilters() {
+const search = document.getElementById('search-input').value;
+const district = document.getElementById('district-filter').value;
+const type = document.getElementById('type-filter').value;
+const status = document.getElementById('status-filter').value;
+const sortBy = document.getElementById('sort-by').value;
+const sortOrder = document.getElementById('sort-order').value;
+const params = new URLSearchParams();
+if (search) params.append('search', search);
+if (district) params.append('district', district);
+if (type) params.append('type', type);
+if (status) params.append('status', status);
+if (sortBy) params.append('sort', sortBy);
+if (sortOrder) params.append('order', sortOrder);
+params.append('page', '1');
+window.location.href = '/facilities?' + params.toString();
+}
+
+function clearFilters() { window.location.href = '/facilities'; }
+function changePage(page) { if (page < 1 || page > totalPages) return; const params = new URLSearchParams(window.location.search); params.set('page', page); window.location.href = '/facilities?' + params.toString(); }
+
+function toggleSelectAll() {
+const selectAll = document.getElementById('select-all');
+const checkboxes = document.querySelectorAll('.facility-select');
+checkboxes.forEach(cb => { cb.checked = selectAll.checked; if (selectAll.checked) selectedFacilities.add(parseInt(cb.value)); else selectedFacilities.delete(parseInt(cb.value)); });
+updateSelection();
+}
+
+function updateSelection() {
+const checkboxes = document.querySelectorAll('.facility-select');
+selectedFacilities.clear();
+checkboxes.forEach(cb => { if (cb.checked) selectedFacilities.add(parseInt(cb.value)); });
+const count = selectedFacilities.size;
+document.getElementById('selected-count').textContent = count;
+document.getElementById('bulk-actions').style.display = count > 0 ? 'flex' : 'none';
+const selectAll = document.getElementById('select-all');
+if (selectAll) { selectAll.checked = count === checkboxes.length; selectAll.indeterminate = count > 0 && count < checkboxes.length; }
+}
+
+function clearSelection() {
+document.querySelectorAll('.facility-select').forEach(cb => cb.checked = false);
+if (document.getElementById('select-all')) document.getElementById('select-all').checked = false;
+selectedFacilities.clear();
+document.getElementById('bulk-actions').style.display = 'none';
+}
+
+// Simplified Bulk Actions (No Delete)
+function bulkActivate() { if (selectedFacilities.size === 0) return; showConfirm('Activate Facilities', 'Activate ' + selectedFacilities.size + ' facility(s)?', function() { /* API Call */ location.reload(); }); }
+function bulkDeactivate() { if (selectedFacilities.size === 0) return; showConfirm('Deactivate Facilities', 'Deactivate ' + selectedFacilities.size + ' facility(s)?', function() { /* API Call */ location.reload(); }); }
+function bulkExport() { if (selectedFacilities.size === 0) return; window.location.href = '/api/facilities/export?ids=' + Array.from(selectedFacilities).join(','); }
+
+function openAddFacilityModal() {
+document.getElementById('modal-title').textContent = 'Add New Facility';
+document.getElementById('facility-form').reset();
+document.getElementById('facility-id').value = '';
+document.getElementById('facility-modal').style.display = 'flex';
+}
+
+function closeFacilityModal() { document.getElementById('facility-modal').style.display = 'none'; }
+
+function editFacility(id) {
+fetch('/api/facilities/' + id).then(r => r.json()).then(data => {
+document.getElementById('modal-title').textContent = 'Edit Facility';
+document.getElementById('facility-id').value = data.id;
+document.getElementById('facility-name').value = data.name;
+document.getElementById('facility-type').value = data.type;
+document.getElementById('facility-population').value = data.catchment_population;
+document.getElementById('facility-district').value = data.district;
+document.getElementById('facility-province').value = data.province;
+document.getElementById('facility-latitude').value = data.latitude;
+document.getElementById('facility-longitude').value = data.longitude;
+document.getElementById('facility-active').checked = data.active;
+document.getElementById('facility-modal').style.display = 'flex';
+});
+}
+
+function saveFacility() {
+var id = document.getElementById('facility-id').value;
+var data = { name: document.getElementById('facility-name').value, type: document.getElementById('facility-type').value, catchment_population: parseInt(document.getElementById('facility-population').value) || 0, district: document.getElementById('facility-district').value, province: document.getElementById('facility-province').value, latitude: parseFloat(document.getElementById('facility-latitude').value) || null, longitude: parseFloat(document.getElementById('facility-longitude').value) || null, active: document.getElementById('facility-active').checked };
+var url = id ? '/api/facilities/' + id : '/api/facilities';
+var method = id ? 'PUT' : 'POST';
+document.getElementById('save-btn').disabled = true;
+document.getElementById('save-btn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+.then(r => r.json()).then(data => { showNotification(id ? 'Facility updated' : 'Facility added', 'success'); closeFacilityModal(); setTimeout(function() { location.reload(); }, 1500); })
+.catch(function(error) { showNotification('Error saving facility', 'danger'); document.getElementById('save-btn').disabled = false; document.getElementById('save-btn').innerHTML = '<i class="fas fa-save"></i> Save Facility'; });
+}
+
+function viewFacility(id) { window.location.href = '/facilities/' + id; }
+function showReports(id) { window.location.href = '/facilities/' + id + '#reports'; }
+function sortTable(column) { var sortBy = document.getElementById('sort-by'); var sortOrder = document.getElementById('sort-order'); if (sortBy.value === column) { sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'; } else { sortBy.value = column; sortOrder.value = 'asc'; } applyFilters(); }
+function exportFacilities() { var params = new URLSearchParams(window.location.search); window.location.href = '/api/facilities/export/all?' + params.toString(); }
+function refreshData() { showNotification('Refreshing data...', 'info'); location.reload(); }
+
+document.addEventListener('DOMContentLoaded', function() {
+switchView('grid');
+var selectAll = document.getElementById('select-all');
+if (selectAll) selectAll.addEventListener('change', toggleSelectAll);
+});
+</script>
+{% endblock %}

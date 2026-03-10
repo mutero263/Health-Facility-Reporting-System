@@ -1,0 +1,1560 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Facilities - Health Facility Reporting System{% endblock %}
+
+{% block page_title %}Facility Comparison{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('list_facilities') }}">Facilities</a></li>
+<li class="breadcrumb-item active">Compare</li>
+{% endblock %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline" onclick="exportComparison()">
+    <i class="fas fa-download"></i> Export
+</button>
+<button type="button" class="btn btn-outline" onclick="printComparison()">
+    <i class="fas fa-print"></i> Print
+</button>
+<button type="button" class="btn btn-primary" onclick="saveComparison()">
+    <i class="fas fa-save"></i> Save View
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Comparison Header */
+    .comparison-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        margin-bottom: var(--spacing-xl);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .comparison-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.1"><path d="M20 20 L80 20 L80 80 L20 80 Z" fill="none" stroke="white" stroke-width="2"/><circle cx="50" cy="50" r="15" fill="none" stroke="white" stroke-width="2"/></svg>');
+        background-size: 100px;
+        opacity: 0.1;
+    }
+    
+    .comparison-header-content {
+        position: relative;
+        z-index: 1;
+    }
+    
+    .comparison-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .comparison-subtitle {
+        font-size: var(--font-size-lg);
+        opacity: 0.9;
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    /* Filter Panel */
+    .filter-panel {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .filter-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-lg);
+        padding-bottom: var(--spacing-sm);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    
+    .filter-label {
+        font-weight: 500;
+        color: var(--darker-gray);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    
+    .filter-label i {
+        color: var(--primary-color);
+        width: 20px;
+    }
+    
+    .filter-actions {
+        display: flex;
+        gap: var(--spacing-md);
+        justify-content: flex-end;
+    }
+    
+    /* Facility Selector */
+    .facility-selector {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .selector-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .selector-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .selector-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+    }
+    
+    .facility-checkbox-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: var(--spacing-md);
+        max-height: 300px;
+        overflow-y: auto;
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+    }
+    
+    .facility-checkbox-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-sm);
+        transition: var(--transition-fast);
+    }
+    
+    .facility-checkbox-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .facility-checkbox-item input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+    
+    .facility-checkbox-item label {
+        flex: 1;
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        color: var(--darker-gray);
+    }
+    
+    .facility-type-badge {
+        font-size: var(--font-size-xs);
+        padding: 2px 6px;
+        border-radius: var(--border-radius-sm);
+        background: var(--primary-light);
+        color: var(--primary-dark);
+    }
+    
+    /* Metric Selector */
+    .metric-selector {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .metric-tabs {
+        display: flex;
+        gap: var(--spacing-xs);
+        margin-bottom: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: var(--spacing-sm);
+        flex-wrap: wrap;
+    }
+    
+    .metric-tab {
+        padding: var(--spacing-sm) var(--spacing-lg);
+        border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+        cursor: pointer;
+        transition: var(--transition-fast);
+        font-weight: 500;
+        color: var(--dark-gray);
+    }
+    
+    .metric-tab:hover {
+        background: var(--light-gray);
+        color: var(--primary-color);
+    }
+    
+    .metric-tab.active {
+        background: var(--primary-color);
+        color: var(--white);
+    }
+    
+    .metric-checkbox-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+        max-height: 400px;
+        overflow-y: auto;
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+    }
+    
+    .metric-category {
+        grid-column: 1 / -1;
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-top: var(--spacing-md);
+        padding-bottom: var(--spacing-xs);
+        border-bottom: 1px dashed var(--border-color);
+    }
+    
+    .metric-category:first-of-type {
+        margin-top: 0;
+    }
+    
+    .metric-checkbox-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-sm);
+        transition: var(--transition-fast);
+    }
+    
+    .metric-checkbox-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .metric-checkbox-item input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+    
+    .metric-checkbox-item label {
+        flex: 1;
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        color: var(--darker-gray);
+    }
+    
+    .metric-info {
+        color: var(--dark-gray);
+        font-size: var(--font-size-xs);
+        cursor: help;
+    }
+    
+    /* Comparison Table */
+    .comparison-table-container {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-lg);
+        overflow-x: auto;
+    }
+    
+    .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 800px;
+    }
+    
+    .comparison-table th {
+        padding: var(--spacing-md);
+        text-align: left;
+        background: var(--light-gray);
+        font-weight: 600;
+        color: var(--darker-gray);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .comparison-table th:first-child {
+        border-top-left-radius: var(--border-radius-md);
+        border-bottom-left-radius: var(--border-radius-md);
+    }
+    
+    .comparison-table th:last-child {
+        border-top-right-radius: var(--border-radius-md);
+        border-bottom-right-radius: var(--border-radius-md);
+    }
+    
+    .comparison-table td {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .comparison-table tr:last-child td {
+        border-bottom: none;
+    }
+    
+    .comparison-table tr:hover td {
+        background: var(--light-gray);
+    }
+    
+    .comparison-table .facility-name {
+        font-weight: 600;
+        color: var(--primary-color);
+    }
+    
+    .comparison-table .metric-value {
+        font-family: var(--font-family-mono);
+        text-align: right;
+    }
+    
+    .comparison-table .metric-value.highlight {
+        background: var(--success-light);
+        font-weight: 600;
+        color: var(--success-color);
+    }
+    
+    .comparison-table .metric-value.lowlight {
+        background: var(--danger-light);
+        color: var(--danger-color);
+    }
+    
+    .comparison-table .rank-badge {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        line-height: 24px;
+        text-align: center;
+        border-radius: var(--border-radius-circle);
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+    }
+    
+    .rank-badge.gold {
+        background: #FFD700;
+        color: #000;
+    }
+    
+    .rank-badge.silver {
+        background: #C0C0C0;
+        color: #000;
+    }
+    
+    .rank-badge.bronze {
+        background: #CD7F32;
+        color: #fff;
+    }
+    
+    /* Summary Cards */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .summary-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition-normal);
+    }
+    
+    .summary-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .summary-header {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+        padding-bottom: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .summary-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: var(--border-radius-circle);
+        background: var(--primary-light);
+        color: var(--primary-dark);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-xl);
+    }
+    
+    .summary-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin: 0;
+    }
+    
+    .summary-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    
+    .summary-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .summary-label {
+        color: var(--dark-gray);
+        font-size: var(--font-size-sm);
+    }
+    
+    .summary-value {
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .summary-value.highlight {
+        color: var(--primary-color);
+        font-size: var(--font-size-lg);
+    }
+    
+    /* Chart Container */
+    .chart-container {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+        height: 400px;
+    }
+    
+    /* Radar Chart */
+    .radar-container {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+        height: 500px;
+    }
+    
+    /* Ranking List */
+    .ranking-container {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .ranking-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    
+    .ranking-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        transition: var(--transition-fast);
+    }
+    
+    .ranking-item:hover {
+        background: var(--light-gray);
+    }
+    
+    .ranking-item.top-three {
+        background: linear-gradient(90deg, var(--primary-light) 0%, transparent 100%);
+    }
+    
+    .ranking-position {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--border-radius-circle);
+        font-weight: 700;
+    }
+    
+    .ranking-position.gold {
+        background: #FFD700;
+        color: #000;
+    }
+    
+    .ranking-position.silver {
+        background: #C0C0C0;
+        color: #000;
+    }
+    
+    .ranking-position.bronze {
+        background: #CD7F32;
+        color: #fff;
+    }
+    
+    .ranking-position.other {
+        background: var(--light-gray);
+        color: var(--dark-gray);
+    }
+    
+    .ranking-info {
+        flex: 1;
+    }
+    
+    .ranking-name {
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .ranking-meta {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        display: flex;
+        gap: var(--spacing-md);
+    }
+    
+    .ranking-value {
+        font-weight: 700;
+        color: var(--primary-color);
+        font-size: var(--font-size-lg);
+        min-width: 80px;
+        text-align: right;
+    }
+    
+    /* Sparklines */
+    .sparkline {
+        width: 100px;
+        height: 30px;
+    }
+    
+    /* Tooltips */
+    .tooltip-icon {
+        color: var(--dark-gray);
+        cursor: help;
+        margin-left: var(--spacing-xs);
+        font-size: var(--font-size-sm);
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .filter-actions {
+            flex-direction: column;
+        }
+        
+        .filter-actions button {
+            width: 100%;
+        }
+        
+        .selector-header {
+            flex-direction: column;
+            gap: var(--spacing-md);
+            align-items: flex-start;
+        }
+        
+        .facility-checkbox-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .metric-checkbox-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .ranking-item {
+            flex-wrap: wrap;
+        }
+        
+        .ranking-value {
+            width: 100%;
+            text-align: left;
+            margin-left: 50px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Comparison Header -->
+<div class="comparison-header">
+    <div class="comparison-header-content">
+        <h1 class="comparison-title">Facility Comparison</h1>
+        <p class="comparison-subtitle">Compare performance across multiple facilities and metrics</p>
+    </div>
+</div>
+
+<!-- Filter Panel -->
+<div class="filter-panel">
+    <h3 class="filter-title">Comparison Settings</h3>
+    
+    <div class="filter-grid">
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-calendar-week"></i> Week</label>
+            <select class="form-select" id="week-select">
+                <option value="">Latest Week</option>
+                {% for week in weeks %}
+                <option value="{{ week.week }}" {% if week.week == selected_week %}selected{% endif %}>
+                    Week {{ week.week }}, {{ week.year }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-calendar-alt"></i> Year</label>
+            <select class="form-select" id="year-select">
+                {% for year in years %}
+                <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>
+                    {{ year }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-chart-type"></i> Comparison Type</label>
+            <select class="form-select" id="comparison-type">
+                <option value="cross-sectional" selected>Cross-sectional (single week)</option>
+                <option value="trend">Trend over time</option>
+                <option value="aggregate">Aggregate (all time)</option>
+            </select>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label"><i class="fas fa-chart-bar"></i> Chart Type</label>
+            <select class="form-select" id="chart-type">
+                <option value="bar" selected>Bar Chart</option>
+                <option value="radar">Radar Chart</option>
+                <option value="heatmap">Heatmap</option>
+                <option value="scatter">Scatter Plot</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="filter-actions">
+        <button type="button" class="btn btn-outline" onclick="resetFilters()">
+            <i class="fas fa-undo"></i> Reset
+        </button>
+        <button type="button" class="btn btn-primary" onclick="applyComparison()">
+            <i class="fas fa-sync-alt"></i> Update Comparison
+        </button>
+    </div>
+</div>
+
+<!-- Facility Selector -->
+<div class="facility-selector">
+    <div class="selector-header">
+        <h3 class="selector-title">Select Facilities to Compare</h3>
+        <div class="selector-actions">
+            <button type="button" class="btn btn-sm btn-outline" onclick="selectAllFacilities()">
+                <i class="fas fa-check-square"></i> Select All
+            </button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="deselectAllFacilities()">
+                <i class="fas fa-square"></i> Deselect All
+            </button>
+        </div>
+    </div>
+    
+    <div class="facility-checkbox-grid" id="facility-list">
+        {% if facilities %}
+            {% for facility in facilities %}
+            <div class="facility-checkbox-item">
+                <input type="checkbox" class="facility-checkbox" value="{{ facility.id }}" 
+                       id="facility-{{ facility.id }}"
+                       {% if facility.id in selected_facilities %}checked{% endif %}>
+                <label for="facility-{{ facility.id }}">
+                    {{ facility.name }}
+                    <span class="facility-type-badge">{{ facility.type }}</span>
+                </label>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No facilities available</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Metric Selector -->
+<div class="metric-selector">
+    <h3 class="selector-title">Select Metrics to Compare</h3>
+    
+    <div class="metric-tabs">
+        <div class="metric-tab active" onclick="switchMetricCategory('all')">All Metrics</div>
+        <div class="metric-tab" onclick="switchMetricCategory('rdns')">RDNS</div>
+        <div class="metric-tab" onclick="switchMetricCategory('maternal')">Maternal</div>
+        <div class="metric-tab" onclick="switchMetricCategory('child')">Child</div>
+        <div class="metric-tab" onclick="switchMetricCategory('hiv')">HIV/TB</div>
+        <div class="metric-tab" onclick="switchMetricCategory('opd')">OPD</div>
+    </div>
+    
+    <div class="metric-checkbox-grid" id="metric-list">
+        <!-- RDNS Metrics -->
+        <div class="metric-category">RDNS - Disease Surveillance</div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="opd_visits" id="metric-opd" checked>
+            <label for="metric-opd">OPD Visits</label>
+            <span class="tooltip-icon" title="Outpatient Department visits"><i class="fas fa-question-circle"></i></span>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="malaria_suspected" id="metric-malaria-suspected">
+            <label for="metric-malaria-suspected">Malaria Suspected</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="malaria_tested" id="metric-malaria-tested">
+            <label for="metric-malaria-tested">Malaria Tested</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="malaria_positive" id="metric-malaria-positive" checked>
+            <label for="metric-malaria-positive">Malaria Positive</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="malaria_positivity_rate" id="metric-positivity-rate" checked>
+            <label for="metric-positivity-rate">Malaria Positivity Rate (%)</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="diarrhoea" id="metric-diarrhoea">
+            <label for="metric-diarrhoea">Diarrhoea Cases</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="dysentery" id="metric-dysentery">
+            <label for="metric-dysentery">Dysentery Cases</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="influenza" id="metric-influenza">
+            <label for="metric-influenza">Influenza Cases</label>
+        </div>
+        
+        <!-- Maternal Health Metrics -->
+        <div class="metric-category">Maternal Health</div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="institutional_deliveries" id="metric-deliveries" checked>
+            <label for="metric-deliveries">Institutional Deliveries</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="home_deliveries" id="metric-home-deliveries">
+            <label for="metric-home-deliveries">Home Deliveries</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="anc_contacts" id="metric-anc" checked>
+            <label for="metric-anc">ANC Contacts</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="pnc_attendees" id="metric-pnc">
+            <label for="metric-pnc">PNC Attendees</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="fp_clients" id="metric-fp">
+            <label for="metric-fp">Family Planning Clients</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="still_births" id="metric-stillbirths">
+            <label for="metric-stillbirths">Still Births</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="institutional_delivery_rate" id="metric-delivery-rate">
+            <label for="metric-delivery-rate">Institutional Delivery Rate (%)</label>
+        </div>
+        
+        <!-- Child Health Metrics -->
+        <div class="metric-category">Child Health</div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="children_vaccinated_penta3" id="metric-penta3">
+            <label for="metric-penta3">Penta3 Vaccinations</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="under5_sam" id="metric-sam">
+            <label for="metric-sam">Under 5 SAM</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="under5_mam" id="metric-mam">
+            <label for="metric-mam">Under 5 MAM</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="children_vitamin_a" id="metric-vitamina">
+            <label for="metric-vitamina">Vitamin A Supplementation</label>
+        </div>
+        
+        <!-- HIV/TB Metrics -->
+        <div class="metric-category">HIV & TB</div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="hiv_tested" id="metric-hiv-tested">
+            <label for="metric-hiv-tested">HIV Tests</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="hiv_positive" id="metric-hiv-positive">
+            <label for="metric-hiv-positive">HIV Positive</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="tb_screened" id="metric-tb-screened">
+            <label for="metric-tb-screened">TB Screened</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="tb_new_relapse" id="metric-tb-cases">
+            <label for="metric-tb-cases">TB Cases</label>
+        </div>
+        
+        <!-- OPD & Services -->
+        <div class="metric-category">OPD & Services</div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="casualty_visits" id="metric-casualty">
+            <label for="metric-casualty">Casualty Visits</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="major_operations" id="metric-operations">
+            <label for="metric-operations">Major Operations</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="c_sections" id="metric-csection">
+            <label for="metric-csection">C-Sections</label>
+        </div>
+        
+        <div class="metric-checkbox-item">
+            <input type="checkbox" class="metric-checkbox" value="functional_ambulance" id="metric-ambulance">
+            <label for="metric-ambulance">Functional Ambulances</label>
+        </div>
+    </div>
+    
+    <div class="filter-actions mt-3">
+        <button type="button" class="btn btn-sm btn-outline" onclick="selectAllMetrics()">
+            Select All Metrics
+        </button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="deselectAllMetrics()">
+            Deselect All
+        </button>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="summary-grid" id="summary-cards">
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-trophy"></i>
+            </div>
+            <h3 class="summary-title">Top Performer</h3>
+        </div>
+        <div class="summary-content" id="top-performer">
+            {% if top_performer %}
+            <div class="summary-item">
+                <span class="summary-label">Facility</span>
+                <span class="summary-value highlight">{{ top_performer.name }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">OPD Visits</span>
+                <span class="summary-value">{{ top_performer.opd_visits|number_format }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Deliveries</span>
+                <span class="summary-value">{{ top_performer.deliveries }}</span>
+            </div>
+            {% else %}
+            <p class="text-muted">Select facilities to see top performer</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <h3 class="summary-title">Averages</h3>
+        </div>
+        <div class="summary-content" id="averages">
+            {% if averages %}
+            <div class="summary-item">
+                <span class="summary-label">OPD Visits</span>
+                <span class="summary-value">{{ averages.opd_visits|number_format }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Deliveries</span>
+                <span class="summary-value">{{ averages.deliveries }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Malaria Positivity</span>
+                <span class="summary-value">{{ averages.positivity_rate }}%</span>
+            </div>
+            {% else %}
+            <p class="text-muted">Select facilities to see averages</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="summary-card">
+        <div class="summary-header">
+            <div class="summary-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3 class="summary-title">Needs Attention</h3>
+        </div>
+        <div class="summary-content" id="needs-attention">
+            {% if needs_attention %}
+            <div class="summary-item">
+                <span class="summary-label">Facility</span>
+                <span class="summary-value highlight">{{ needs_attention.name }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Issue</span>
+                <span class="summary-value">{{ needs_attention.issue }}</span>
+            </div>
+            {% else %}
+            <p class="text-muted">Select facilities to identify issues</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Chart Container -->
+<div class="chart-container" id="comparison-chart">
+    <canvas id="comparisonChart"></canvas>
+</div>
+
+<!-- Radar Chart Container (initially hidden) -->
+<div class="radar-container" id="radar-chart" style="display: none;">
+    <canvas id="radarChart"></canvas>
+</div>
+
+<!-- Ranking List -->
+<div class="ranking-container">
+    <h3 class="selector-title mb-3">Facility Rankings</h3>
+    
+    <div class="ranking-list" id="ranking-list">
+        {% if rankings %}
+            {% for rank in rankings %}
+            <div class="ranking-item {% if rank.position <= 3 %}top-three{% endif %}">
+                <div class="ranking-position 
+                    {% if rank.position == 1 %}gold
+                    {% elif rank.position == 2 %}silver
+                    {% elif rank.position == 3 %}bronze
+                    {% else %}other{% endif %}">
+                    {{ rank.position }}
+                </div>
+                <div class="ranking-info">
+                    <div class="ranking-name">{{ rank.name }}</div>
+                    <div class="ranking-meta">
+                        <span>{{ rank.type }}</span>
+                        <span>{{ rank.district }}</span>
+                    </div>
+                </div>
+                <div class="ranking-value">{{ rank.score }}</div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted text-center">Select facilities and metrics to generate rankings</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Comparison Table -->
+<div class="comparison-table-container">
+    <h3 class="selector-title mb-3">Detailed Comparison</h3>
+    
+    <table class="comparison-table" id="comparison-table">
+        <thead>
+            <tr>
+                <th>Metric</th>
+                {% if selected_facilities %}
+                    {% for facility_id in selected_facilities %}
+                        {% for facility in facilities if facility.id == facility_id %}
+                        <th>{{ facility.name }}</th>
+                        {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <th>Facility 1</th>
+                    <th>Facility 2</th>
+                    <th>Facility 3</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="facility-name">OPD Visits</td>
+                <td class="metric-value">1,245</td>
+                <td class="metric-value highlight">2,890</td>
+                <td class="metric-value">1,567</td>
+            </tr>
+            <tr>
+                <td class="facility-name">Malaria Positive</td>
+                <td class="metric-value">12</td>
+                <td class="metric-value">8</td>
+                <td class="metric-value lowlight">24</td>
+            </tr>
+            <tr>
+                <td class="facility-name">Malaria Positivity Rate</td>
+                <td class="metric-value">8.5%</td>
+                <td class="metric-value">4.2%</td>
+                <td class="metric-value lowlight">12.8%</td>
+            </tr>
+            <tr>
+                <td class="facility-name">Institutional Deliveries</td>
+                <td class="metric-value">45</td>
+                <td class="metric-value highlight">78</td>
+                <td class="metric-value">32</td>
+            </tr>
+            <tr>
+                <td class="facility-name">ANC Contacts</td>
+                <td class="metric-value">120</td>
+                <td class="metric-value">156</td>
+                <td class="metric-value">98</td>
+            </tr>
+            <tr>
+                <td class="facility-name">HIV Tests</td>
+                <td class="metric-value">67</td>
+                <td class="metric-value">89</td>
+                <td class="metric-value">45</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // ============================================================================
+    // STATE MANAGEMENT
+    // ============================================================================
+    
+    let comparisonChart = null;
+    let radarChart = null;
+    let currentMetricCategory = 'all';
+    let selectedFacilities = new Set();
+    let selectedMetrics = new Set(['opd_visits', 'malaria_positive', 'malaria_positivity_rate', 'institutional_deliveries', 'anc_contacts']);
+    
+    // Initialize selected facilities from DOM
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.facility-checkbox:checked').forEach(cb => {
+            selectedFacilities.add(parseInt(cb.value));
+        });
+        
+        document.querySelectorAll('.metric-checkbox:checked').forEach(cb => {
+            selectedMetrics.add(cb.value);
+        });
+        
+        updateComparison();
+    });
+    
+    // ============================================================================
+    // FACILITY SELECTION
+    // ============================================================================
+    
+    function selectAllFacilities() {
+        document.querySelectorAll('.facility-checkbox').forEach(cb => {
+            cb.checked = true;
+            selectedFacilities.add(parseInt(cb.value));
+        });
+        updateComparison();
+    }
+    
+    function deselectAllFacilities() {
+        document.querySelectorAll('.facility-checkbox').forEach(cb => {
+            cb.checked = false;
+        });
+        selectedFacilities.clear();
+        updateComparison();
+    }
+    
+    document.querySelectorAll('.facility-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const facilityId = parseInt(this.value);
+            if (this.checked) {
+                selectedFacilities.add(facilityId);
+            } else {
+                selectedFacilities.delete(facilityId);
+            }
+            updateComparison();
+        });
+    });
+    
+    // ============================================================================
+    // METRIC SELECTION
+    // ============================================================================
+    
+    function switchMetricCategory(category) {
+        currentMetricCategory = category;
+        
+        document.querySelectorAll('.metric-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        // Filter metrics by category
+        document.querySelectorAll('.metric-category, .metric-checkbox-item').forEach(el => {
+            if (category === 'all') {
+                el.style.display = 'flex';
+            } else {
+                // This is simplified - in reality you'd have data attributes
+                el.style.display = 'flex';
+            }
+        });
+    }
+    
+    function selectAllMetrics() {
+        document.querySelectorAll('.metric-checkbox').forEach(cb => {
+            cb.checked = true;
+            selectedMetrics.add(cb.value);
+        });
+        updateComparison();
+    }
+    
+    function deselectAllMetrics() {
+        document.querySelectorAll('.metric-checkbox').forEach(cb => {
+            cb.checked = false;
+        });
+        selectedMetrics.clear();
+        updateComparison();
+    }
+    
+    document.querySelectorAll('.metric-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            if (this.checked) {
+                selectedMetrics.add(this.value);
+            } else {
+                selectedMetrics.delete(this.value);
+            }
+            updateComparison();
+        });
+    });
+    
+    // ============================================================================
+    // COMPARISON UPDATE
+    // ============================================================================
+    
+    function applyComparison() {
+        updateComparison();
+    }
+    
+    function resetFilters() {
+        document.getElementById('week-select').value = '';
+        document.getElementById('year-select').value = '{{ current_year }}';
+        document.getElementById('comparison-type').value = 'cross-sectional';
+        document.getElementById('chart-type').value = 'bar';
+        
+        selectAllFacilities();
+        selectAllMetrics();
+    }
+    
+    function updateComparison() {
+        const week = document.getElementById('week-select').value;
+        const year = document.getElementById('year-select').value;
+        const comparisonType = document.getElementById('comparison-type').value;
+        const chartType = document.getElementById('chart-type').value;
+        
+        const facilityIds = Array.from(selectedFacilities);
+        const metrics = Array.from(selectedMetrics);
+        
+        if (facilityIds.length === 0) {
+            showNotification('Please select at least one facility', 'warning');
+            return;
+        }
+        
+        if (metrics.length === 0) {
+            showNotification('Please select at least one metric', 'warning');
+            return;
+        }
+        
+        // Show loading
+        showLoading();
+        
+        // Fetch comparison data
+        fetch('/api/comparison', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN
+            },
+            body: JSON.stringify({
+                facility_ids: facilityIds,
+                week: week || null,
+                year: year || null,
+                metrics: metrics,
+                comparison_type: comparisonType
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            updateCharts(data, chartType);
+            updateTable(data);
+            updateRankings(data);
+            updateSummaryCards(data);
+        })
+        .catch(error => {
+            hideLoading();
+            showNotification('Error loading comparison data', 'danger');
+            console.error(error);
+        });
+    }
+    
+    // ============================================================================
+    // CHART UPDATES
+    // ============================================================================
+    
+    function updateCharts(data, chartType) {
+        const chartContainer = document.getElementById('comparison-chart');
+        const radarContainer = document.getElementById('radar-chart');
+        const ctx = document.getElementById('comparisonChart').getContext('2d');
+        
+        if (chartType === 'radar') {
+            chartContainer.style.display = 'none';
+            radarContainer.style.display = 'block';
+            updateRadarChart(data);
+        } else {
+            chartContainer.style.display = 'block';
+            radarContainer.style.display = 'none';
+            
+            if (comparisonChart) {
+                comparisonChart.destroy();
+            }
+            
+            comparisonChart = new Chart(ctx, {
+                type: chartType,
+                data: {
+                    labels: data.facilities,
+                    datasets: data.metrics.map((metric, index) => ({
+                        label: metric.name,
+                        data: metric.values,
+                        backgroundColor: `hsla(${index * 40}, 70%, 50%, 0.5)`,
+                        borderColor: `hsla(${index * 40}, 70%, 50%, 1)`,
+                        borderWidth: 1
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Facility Comparison - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`
+                        },
+                        legend: {
+                            position: 'bottom'
+                        }
+                    },
+                    scales: chartType === 'bar' ? {
+                        y: { beginAtZero: true }
+                    } : {}
+                }
+            });
+        }
+    }
+    
+    function updateRadarChart(data) {
+        const ctx = document.getElementById('radarChart').getContext('2d');
+        
+        if (radarChart) {
+            radarChart.destroy();
+        }
+        
+        radarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: data.metrics.map(m => m.name),
+                datasets: data.facilities.map((facility, index) => ({
+                    label: facility,
+                    data: data.metrics.map(m => m.values[index]),
+                    backgroundColor: `hsla(${index * 60}, 70%, 50%, 0.2)`,
+                    borderColor: `hsla(${index * 60}, 70%, 50%, 1)`,
+                    borderWidth: 2,
+                    pointBackgroundColor: `hsla(${index * 60}, 70%, 50%, 1)`
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Facility Performance Radar'
+                    }
+                }
+            }
+        });
+    }
+    
+    // ============================================================================
+    // TABLE UPDATE
+    // ============================================================================
+    
+    function updateTable(data) {
+        const table = document.getElementById('comparison-table');
+        const thead = table.querySelector('thead tr');
+        const tbody = table.querySelector('tbody');
+        
+        // Clear existing content except first header
+        while (thead.children.length > 1) {
+            thead.removeChild(thead.lastChild);
+        }
+        
+        tbody.innerHTML = '';
+        
+        // Add facility headers
+        data.facilities.forEach(facility => {
+            const th = document.createElement('th');
+            th.textContent = facility;
+            thead.appendChild(th);
+        });
+        
+        // Add metric rows
+        data.metrics.forEach(metric => {
+            const row = document.createElement('tr');
+            
+            // Metric name
+            const nameCell = document.createElement('td');
+            nameCell.className = 'facility-name';
+            nameCell.textContent = metric.name;
+            row.appendChild(nameCell);
+            
+            // Values
+            const values = metric.values;
+            const maxIndex = values.indexOf(Math.max(...values));
+            const minIndex = values.indexOf(Math.min(...values));
+            
+            values.forEach((value, index) => {
+                const cell = document.createElement('td');
+                cell.className = 'metric-value';
+                
+                if (index === maxIndex && metric.higher_is_better !== false) {
+                    cell.classList.add('highlight');
+                } else if (index === minIndex && metric.lower_is_better) {
+                    cell.classList.add('highlight');
+                }
+                
+                if (typeof value === 'number') {
+                    cell.textContent = value.toLocaleString();
+                } else {
+                    cell.textContent = value;
+                }
+                
+                row.appendChild(cell);
+            });
+            
+            tbody.appendChild(row);
+        });
+    }
+    
+    // ============================================================================
+    // RANKINGS UPDATE
+    // ============================================================================
+    
+    function updateRankings(data) {
+        const rankingList = document.getElementById('ranking-list');
+        
+        if (!data.rankings || data.rankings.length === 0) {
+            rankingList.innerHTML = '<p class="text-muted text-center">No ranking data available</p>';
+            return;
+        }
+        
+        let html = '';
+        data.rankings.forEach((rank, index) => {
+            const position = index + 1;
+            const positionClass = position === 1 ? 'gold' : position === 2 ? 'silver' : position === 3 ? 'bronze' : 'other';
+            
+            html += `
+                <div class="ranking-item ${position <= 3 ? 'top-three' : ''}">
+                    <div class="ranking-position ${positionClass}">${position}</div>
+                    <div class="ranking-info">
+                        <div class="ranking-name">${rank.name}</div>
+                        <div class="ranking-meta">
+                            <span>${rank.type || 'Clinic'}</span>
+                            <span>${rank.district || ''}</span>
+                        </div>
+                    </div>
+                    <div class="ranking-value">${rank.score}</div>
+                </div>
+            `;
+        });
+        
+        rankingList.innerHTML = html;
+    }
+    
+    // ============================================================================
+    // SUMMARY CARDS UPDATE
+    // ============================================================================
+    
+    function updateSummaryCards(data) {
+        // Update top performer
+        if (data.top_performer) {
+            document.getElementById('top-performer').innerHTML = `
+                <div class="summary-item">
+                    <span class="summary-label">Facility</span>
+                    <span class="summary-value highlight">${data.top_performer.name}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">OPD Visits</span>
+                    <span class="summary-value">${data.top_performer.opd_visits.toLocaleString()}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Deliveries</span>
+                    <span class="summary-value">${data.top_performer.deliveries}</span>
+                </div>
+            `;
+        }
+        
+        // Update averages
+        if (data.averages) {
+            document.getElementById('averages').innerHTML = `
+                <div class="summary-item">
+                    <span class="summary-label">OPD Visits</span>
+                    <span class="summary-value">${data.averages.opd_visits.toLocaleString()}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Deliveries</span>
+                    <span class="summary-value">${data.averages.deliveries}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Malaria Positivity</span>
+                    <span class="summary-value">${data.averages.positivity_rate}%</span>
+                </div>
+            `;
+        }
+        
+        // Update needs attention
+        if (data.needs_attention) {
+            document.getElementById('needs-attention').innerHTML = `
+                <div class="summary-item">
+                    <span class="summary-label">Facility</span>
+                    <span class="summary-value highlight">${data.needs_attention.name}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Issue</span>
+                    <span class="summary-value">${data.needs_attention.issue}</span>
+                </div>
+            `;
+        }
+    }
+    
+    // ============================================================================
+    // EXPORT FUNCTIONS
+    // ============================================================================
+    
+    function exportComparison() {
+        const facilityIds = Array.from(selectedFacilities);
+        const metrics = Array.from(selectedMetrics);
+        const week = document.getElementById('week-select').value;
+        const year = document.getElementById('year-select').value;
+        
+        if (facilityIds.length === 0) {
+            showNotification('Please select facilities to export', 'warning');
+            return;
+        }
+        
+        const params = new URLSearchParams({
+            facilities: facilityIds.join(','),
+            metrics: metrics.join(','),
+            week: week,
+            year: year
+        });
+        
+        window.location.href = '/api/comparison/export?' + params.toString();
+    }
+    
+    function printComparison() {
+        window.print();
+    }
+    
+    function saveComparison() {
+        const name = prompt('Enter a name for this comparison view:');
+        if (name) {
+            const facilityIds = Array.from(selectedFacilities);
+            const metrics = Array.from(selectedMetrics);
+            const week = document.getElementById('week-select').value;
+            const year = document.getElementById('year-select').value;
+            const chartType = document.getElementById('chart-type').value;
+            
+            fetch('/api/comparison/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: JSON.stringify({
+                    name: name,
+                    facility_ids: facilityIds,
+                    metrics: metrics,
+                    week: week,
+                    year: year,
+                    chart_type: chartType
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification('Comparison view saved successfully', 'success');
+            })
+            .catch(error => {
+                showNotification('Error saving comparison view', 'danger');
+            });
+        }
+    }
+</script>
+{% endblock %}

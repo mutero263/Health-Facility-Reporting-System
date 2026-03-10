@@ -1,0 +1,1235 @@
+{% extends "base.html" %}
+
+{% block title %}Weekly Report - Week {{ report.week }}, {{ report.year }} - {{ report.facility_name }}{% endblock %}
+
+{% block page_title %}Weekly Report: Week {{ report.week }}, {{ report.year }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('list_facilities') }}">Facilities</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('view_facility', facility_id=report.facility_id) }}">{{ report.facility_name }}</a></li>
+<li class="breadcrumb-item active">Week {{ report.week }}, {{ report.year }}</li>
+{% endblock %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline" onclick="window.history.back()">
+    <i class="fas fa-arrow-left"></i> Back
+</button>
+<button type="button" class="btn btn-primary" onclick="editReport()">
+    <i class="fas fa-edit"></i> Edit Report
+</button>
+<button type="button" class="btn btn-outline" onclick="exportReport()">
+    <i class="fas fa-download"></i> Export
+</button>
+<button type="button" class="btn btn-outline" onclick="printReport()">
+    <i class="fas fa-print"></i> Print
+</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Report Header */
+    .report-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+        color: white;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        margin-bottom: var(--spacing-xl);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .report-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.1"><path d="M20 20 L80 20 L80 80 L20 80 Z" fill="none" stroke="white" stroke-width="2"/><circle cx="50" cy="50" r="15" fill="none" stroke="white" stroke-width="2"/></svg>');
+        background-size: 100px;
+        opacity: 0.1;
+    }
+    
+    .report-header-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .report-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .report-meta {
+        display: flex;
+        gap: var(--spacing-lg);
+        font-size: var(--font-size-base);
+        opacity: 0.9;
+    }
+    
+    .report-meta i {
+        margin-right: var(--spacing-xs);
+    }
+    
+    .report-quality-badge {
+        display: inline-block;
+        padding: var(--spacing-sm) var(--spacing-lg);
+        border-radius: var(--border-radius-lg);
+        font-weight: 600;
+        font-size: var(--font-size-base);
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(5px);
+    }
+    
+    .report-quality-badge.excellent { background: var(--success-color); }
+    .report-quality-badge.good { background: var(--info-color); }
+    .report-quality-badge.fair { background: var(--warning-color); }
+    .report-quality-badge.poor { background: var(--danger-color); }
+    
+    /* Quick Stats */
+    .quick-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
+    }
+    
+    .stat-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        transition: var(--transition-normal);
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .stat-icon {
+        width: 50px;
+        height: 50px;
+        border-radius: var(--border-radius-circle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-xl);
+    }
+    
+    .stat-icon.primary { background: var(--primary-light); color: var(--primary-dark); }
+    .stat-icon.success { background: var(--success-light); color: var(--success-color); }
+    .stat-icon.warning { background: var(--warning-light); color: var(--warning-color); }
+    .stat-icon.danger { background: var(--danger-light); color: var(--danger-color); }
+    .stat-icon.info { background: var(--info-light); color: var(--info-color); }
+    
+    .stat-content {
+        flex: 1;
+    }
+    
+    .stat-label {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .stat-value {
+        font-size: var(--font-size-xl);
+        font-weight: 700;
+        color: var(--darker-gray);
+        line-height: 1.2;
+    }
+    
+    .stat-trend {
+        font-size: var(--font-size-sm);
+        margin-top: var(--spacing-xs);
+    }
+    
+    .stat-trend.positive { color: var(--success-color); }
+    .stat-trend.negative { color: var(--danger-color); }
+    
+    /* Section Cards */
+    .section-card {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: var(--spacing-lg);
+        overflow: hidden;
+    }
+    
+    .section-header {
+        padding: var(--spacing-lg);
+        background: var(--light-gray);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+    
+    .section-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--border-radius-circle);
+        background: var(--primary-light);
+        color: var(--primary-dark);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--font-size-lg);
+    }
+    
+    .section-title {
+        font-size: var(--font-size-lg);
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin: 0;
+    }
+    
+    .section-body {
+        padding: var(--spacing-lg);
+    }
+    
+    /* Metrics Grid */
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: var(--spacing-md);
+    }
+    
+    .metric-item {
+        background: var(--light-gray);
+        border-radius: var(--border-radius-md);
+        padding: var(--spacing-md);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: var(--transition-fast);
+    }
+    
+    .metric-item:hover {
+        background: var(--primary-light);
+        transform: translateX(5px);
+    }
+    
+    .metric-label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        color: var(--dark-gray);
+        font-weight: 500;
+    }
+    
+    .metric-label i {
+        color: var(--primary-color);
+        width: 20px;
+    }
+    
+    .metric-value {
+        font-weight: 600;
+        color: var(--darker-gray);
+        font-family: var(--font-family-mono);
+    }
+    
+    .metric-value.fraction {
+        background: var(--white);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-radius: var(--border-radius-sm);
+    }
+    
+    /* Comparison Table */
+    .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .comparison-table th {
+        padding: var(--spacing-md);
+        text-align: left;
+        background: var(--light-gray);
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .comparison-table td {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .comparison-table tr:last-child td {
+        border-bottom: none;
+    }
+    
+    .comparison-table .positive-change {
+        color: var(--success-color);
+        font-weight: 600;
+    }
+    
+    .comparison-table .negative-change {
+        color: var(--danger-color);
+        font-weight: 600;
+    }
+    
+    .comparison-table .neutral-change {
+        color: var(--warning-color);
+        font-weight: 600;
+    }
+    
+    /* Alerts List */
+    .validation-alerts {
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .alert-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        margin-bottom: var(--spacing-sm);
+        animation: slideIn 0.3s ease;
+    }
+    
+    .alert-item.warning {
+        background: var(--warning-light);
+        border-left: 4px solid var(--warning-color);
+    }
+    
+    .alert-item.error {
+        background: var(--danger-light);
+        border-left: 4px solid var(--danger-color);
+    }
+    
+    .alert-item.info {
+        background: var(--info-light);
+        border-left: 4px solid var(--info-color);
+    }
+    
+    .alert-icon {
+        font-size: var(--font-size-lg);
+    }
+    
+    .alert-icon.warning { color: var(--warning-color); }
+    .alert-icon.error { color: var(--danger-color); }
+    .alert-icon.info { color: var(--info-color); }
+    
+    .alert-content {
+        flex: 1;
+    }
+    
+    .alert-title {
+        font-weight: 600;
+        color: var(--darker-gray);
+        margin-bottom: var(--spacing-xs);
+    }
+    
+    .alert-message {
+        color: var(--dark-gray);
+        font-size: var(--font-size-sm);
+    }
+    
+    /* Metadata Grid */
+    .metadata-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: var(--spacing-md);
+        background: var(--light-gray);
+        padding: var(--spacing-lg);
+        border-radius: var(--border-radius-lg);
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .metadata-item {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .metadata-label {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        margin-bottom: var(--spacing-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .metadata-value {
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    /* Comments Section */
+    .comments-section {
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-lg);
+        margin-top: var(--spacing-lg);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .comment-item {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .comment-item:last-child {
+        border-bottom: none;
+    }
+    
+    .comment-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .comment-author {
+        font-weight: 600;
+        color: var(--darker-gray);
+    }
+    
+    .comment-date {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+    }
+    
+    .comment-text {
+        color: var(--darker-gray);
+        line-height: 1.6;
+    }
+    
+    .comment-input {
+        display: flex;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-lg);
+    }
+    
+    .comment-input textarea {
+        flex: 1;
+        padding: var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        resize: vertical;
+        min-height: 80px;
+    }
+    
+    .comment-input textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(46, 134, 171, 0.1);
+    }
+    
+    /* Navigation */
+    .report-navigation {
+        display: flex;
+        justify-content: space-between;
+        margin-top: var(--spacing-xl);
+        padding-top: var(--spacing-lg);
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .nav-prev, .nav-next {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md) var(--spacing-lg);
+        background: var(--white);
+        border-radius: var(--border-radius-lg);
+        box-shadow: var(--shadow-sm);
+        text-decoration: none;
+        color: var(--darker-gray);
+        transition: var(--transition-fast);
+    }
+    
+    .nav-prev:hover, .nav-next:hover {
+        transform: translateX(5px);
+        box-shadow: var(--shadow-md);
+        color: var(--primary-color);
+    }
+    
+    .nav-prev.disabled, .nav-next.disabled {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+    
+    .nav-direction {
+        font-size: var(--font-size-sm);
+        color: var(--dark-gray);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .nav-week {
+        font-weight: 600;
+    }
+    
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .pulse {
+        animation: pulse 2s infinite;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .report-header-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--spacing-md);
+        }
+        
+        .quick-stats {
+            grid-template-columns: 1fr;
+        }
+        
+        .metrics-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .comparison-table {
+            font-size: var(--font-size-sm);
+        }
+        
+        .comparison-table th, 
+        .comparison-table td {
+            padding: var(--spacing-sm);
+        }
+        
+        .report-navigation {
+            flex-direction: column;
+            gap: var(--spacing-md);
+        }
+        
+        .nav-prev, .nav-next {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Report Header -->
+<div class="report-header">
+    <div class="report-header-content">
+        <div>
+            <h1 class="report-title">Weekly Report: Week {{ report.week }}, {{ report.year }}</h1>
+            <div class="report-meta">
+                <span><i class="fas fa-building"></i> {{ report.facility_name }}</span>
+                <span><i class="fas fa-calendar"></i> Submitted: {% if report.report_date %}{{ report.report_date|date }}{% else %}Not submitted{% endif %}</span>
+                <span><i class="fas fa-user"></i> {% if report.submitted_by %}{{ report.submitted_by }}{% else %}System{% endif %}</span>
+            </div>
+        </div>
+        <div class="report-quality-badge 
+            {% if report.data_quality_score and report.data_quality_score >= 90 %}excellent
+            {% elif report.data_quality_score and report.data_quality_score >= 70 %}good
+            {% elif report.data_quality_score and report.data_quality_score >= 50 %}fair
+            {% else %}poor{% endif %}">
+            <i class="fas fa-chart-line"></i> 
+            Quality: {% if report.data_quality_score %}{{ report.data_quality_score }}%{% else %}N/A{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Validation Alerts -->
+{% if validation_alerts %}
+<div class="validation-alerts">
+    {% for alert in validation_alerts %}
+    <div class="alert-item {{ alert.type }}">
+        <div class="alert-icon {{ alert.type }}">
+            <i class="fas fa-{% if alert.type == 'error' %}exclamation-circle{% elif alert.type == 'warning' %}exclamation-triangle{% else %}info-circle{% endif %}"></i>
+        </div>
+        <div class="alert-content">
+            <div class="alert-title">{{ alert.title }}</div>
+            <div class="alert-message">{{ alert.message }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Quick Stats -->
+<div class="quick-stats">
+    <div class="stat-card">
+        <div class="stat-icon primary">
+            <i class="fas fa-walk-in"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">OPD Visits</div>
+            <div class="stat-value">{{ report.opd_visits|default(0)|number_format }}</div>
+            <div class="stat-trend {% if comparison and comparison.opd_visits and comparison.opd_visits.change > 0 %}positive{% else %}negative{% endif %}">
+                <i class="fas fa-{% if comparison and comparison.opd_visits and comparison.opd_visits.change > 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                {% if comparison and comparison.opd_visits %}{{ comparison.opd_visits.percent_change }}% vs last week{% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon success">
+            <i class="fas fa-baby"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Deliveries</div>
+            <div class="stat-value">{{ report.institutional_deliveries|default(0) }}</div>
+            <div class="stat-trend">
+                <i class="fas fa-home"></i> Home: {{ report.home_deliveries|default(0) }}
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon warning">
+            <i class="fas fa-female"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">ANC Contacts</div>
+            <div class="stat-value">{{ report.anc_contacts|default(0) }}</div>
+            <div class="stat-trend">
+                <i class="fas fa-heartbeat"></i> PNC: {{ report.pnc_attendees|default(0) }}
+            </div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon danger">
+            <i class="fas fa-biohazard"></i>
+        </div>
+        <div class="stat-content">
+            <div class="stat-label">Malaria Positive</div>
+            <div class="stat-value">{{ malaria.positive|default(0) }}</div>
+            <div class="stat-trend">
+                <i class="fas fa-flask"></i> Tested: {{ malaria.tested|default(0) }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Metadata Grid -->
+<div class="metadata-grid">
+    <div class="metadata-item">
+        <span class="metadata-label">Report ID</span>
+        <span class="metadata-value">#{{ report.id }}</span>
+    </div>
+    <div class="metadata-item">
+        <span class="metadata-label">Facility ID</span>
+        <span class="metadata-value">{{ report.facility_id }}</span>
+    </div>
+    <div class="metadata-item">
+        <span class="metadata-label">Reporting Period</span>
+        <span class="metadata-value">Week {{ report.week }}, {{ report.year }}</span>
+    </div>
+    <div class="metadata-item">
+        <span class="metadata-label">Last Updated</span>
+        <span class="metadata-value">{% if report.updated_at %}{{ report.updated_at|date }}{% else %}{{ report.report_date|date }}{% endif %}</span>
+    </div>
+</div>
+
+<!-- RDNS Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-chart-line"></i>
+        </div>
+        <h3 class="section-title">RDNS - Routine Disease Notification System</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-biohazard"></i> Malaria Suspected</span>
+                <span class="metric-value fraction">{{ report.malaria_suspected|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-flask"></i> Malaria Tested</span>
+                <span class="metric-value fraction">{{ report.malaria_tested|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-skull-crosswind"></i> Malaria Positive</span>
+                <span class="metric-value fraction">{{ report.malaria_positive|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-pills"></i> Uncomplicated Malaria</span>
+                <span class="metric-value">{{ report.malaria_uncomplicated|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-skull"></i> Malaria Deaths</span>
+                <span class="metric-value">{{ report.malaria_death|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-plane"></i> History of Travel</span>
+                <span class="metric-value">{{ report.malaria_history_travel|default('No') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-poop"></i> Diarrhoea</span>
+                <span class="metric-value fraction">{{ report.diarrhoea|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-bacteria"></i> Dysentery</span>
+                <span class="metric-value fraction">{{ report.dysentery|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-lungs"></i> Influenza</span>
+                <span class="metric-value fraction">{{ report.influenza|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-dog"></i> Dog Bite</span>
+                <span class="metric-value">{{ report.dog_bite|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-child"></i> Kwashiorkor</span>
+                <span class="metric-value">{{ report.kwashiorkor|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-weight"></i> Marasmus</span>
+                <span class="metric-value">{{ report.marasmus|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-water"></i> Bilharzia</span>
+                <span class="metric-value">{{ report.bilharzia|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-female"></i> Maternal Death</span>
+                <span class="metric-value">{{ report.maternal_death|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-baby"></i> Perinatal Death</span>
+                <span class="metric-value">{{ report.perinatal_death|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VHW Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-users"></i>
+        </div>
+        <h3 class="section-title">VHW - Village Health Workers</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-biohazard"></i> Malaria Suspected</span>
+                <span class="metric-value fraction">{{ report.vhw_malaria_suspected|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-flask"></i> Malaria Tested</span>
+                <span class="metric-value fraction">{{ report.vhw_malaria_tested|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-skull-crosswind"></i> Malaria Positive</span>
+                <span class="metric-value fraction">{{ report.vhw_malaria_positive|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-poop"></i> Diarrhoea</span>
+                <span class="metric-value fraction">{{ report.vhw_diarrhoea|default('0/0') }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-bacteria"></i> Dysentery</span>
+                <span class="metric-value fraction">{{ report.vhw_dysentery|default('0/0') }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AEFI Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <h3 class="section-title">AEFI & Surveillance</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-syringe"></i> AEFI</span>
+                <span class="metric-value">{{ report.aefi|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-wheelchair"></i> AFP</span>
+                <span class="metric-value">{{ report.afp|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-baby"></i> NNT</span>
+                <span class="metric-value">{{ report.nnt|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-virus"></i> Measles</span>
+                <span class="metric-value">{{ report.measles|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- OPD Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-hospital"></i>
+        </div>
+        <h3 class="section-title">OPD & Clinical Services</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-user-md"></i> Doctors Resigned</span>
+                <span class="metric-value">{{ report.drs_resigned|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-user-nurse"></i> Nurses Resigned</span>
+                <span class="metric-value">{{ report.nurses_resigned|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-ambulance"></i> Casualty Visits</span>
+                <span class="metric-value">{{ report.casualty_visits|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-walk-in"></i> OPD Visits</span>
+                <span class="metric-value">{{ report.opd_visits|default(0)|number_format }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-procedures"></i> In-patients Admissions</span>
+                <span class="metric-value">{{ report.in_patients_admissions|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-scalpel"></i> Major Operations</span>
+                <span class="metric-value">{{ report.major_operations|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-child"></i> C-Sections</span>
+                <span class="metric-value">{{ report.c_sections|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-kidney"></i> Renal Dialysis</span>
+                <span class="metric-value">{{ report.renal_dialysis|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Maternal Health Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-female"></i>
+        </div>
+        <h3 class="section-title">Maternal Health</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-stethoscope"></i> ANC Contacts</span>
+                <span class="metric-value">{{ report.anc_contacts|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-heart"></i> Family Planning</span>
+                <span class="metric-value">{{ report.fp_clients|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-baby"></i> PNC Attendees</span>
+                <span class="metric-value">{{ report.pnc_attendees|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-hospital"></i> Institutional Deliveries</span>
+                <span class="metric-value">{{ report.institutional_deliveries|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-home"></i> Home Deliveries</span>
+                <span class="metric-value">{{ report.home_deliveries|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-heartbeat"></i> Still Births</span>
+                <span class="metric-value">{{ report.still_births|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Child Health Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-child"></i>
+        </div>
+        <h3 class="section-title">Child Health</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-syringe"></i> Penta3 Vaccinations</span>
+                <span class="metric-value">{{ report.children_vaccinated_penta3|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-utensils"></i> Under 5 SAM</span>
+                <span class="metric-value">{{ report.under5_sam|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-apple-alt"></i> Under 5 MAM</span>
+                <span class="metric-value">{{ report.under5_mam|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-eye"></i> Vitamin A</span>
+                <span class="metric-value">{{ report.children_vitamin_a|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-skull"></i> Under 5 Deaths</span>
+                <span class="metric-value">{{ report.under5_deaths|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- HIV/TB Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-heartbeat"></i>
+        </div>
+        <h3 class="section-title">HIV & TB</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-flask"></i> HIV Tested</span>
+                <span class="metric-value">{{ report.hiv_tested|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-plus-circle"></i> HIV Positive</span>
+                <span class="metric-value">{{ report.hiv_positive|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-lungs"></i> TB New & Relapse</span>
+                <span class="metric-value">{{ report.tb_new_relapse|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-stethoscope"></i> TB Screened</span>
+                <span class="metric-value">{{ report.tb_screened|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Other Indicators Section -->
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-ellipsis-h"></i>
+        </div>
+        <h3 class="section-title">Other Indicators</h3>
+    </div>
+    <div class="section-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-skull"></i> Institutional Deaths</span>
+                <span class="metric-value">{{ report.institutional_deaths|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-ambulance"></i> Functional Ambulance</span>
+                <span class="metric-value">{{ report.functional_ambulance|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-x-ray"></i> X-Ray Patients</span>
+                <span class="metric-value">{{ report.xray_patients|default(0) }}</span>
+            </div>
+            <div class="metric-item">
+                <span class="metric-label"><i class="fas fa-pills"></i> Tracer Medicines Stock</span>
+                <span class="metric-value">{{ report.tracer_medicines_stock|default(0) }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Comparison with Previous Week -->
+{% if previous_report %}
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-chart-bar"></i>
+        </div>
+        <h3 class="section-title">Comparison with Previous Week (Week {{ previous_report.week }}, {{ previous_report.year }})</h3>
+    </div>
+    <div class="section-body">
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Current Week</th>
+                    <th>Previous Week</th>
+                    <th>Change</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>OPD Visits</td>
+                    <td>{{ report.opd_visits|default(0) }}</td>
+                    <td>{{ previous_report.opd_visits|default(0) }}</td>
+                    <td class="{% if report.opd_visits and previous_report.opd_visits and report.opd_visits > previous_report.opd_visits %}positive-change{% elif report.opd_visits and previous_report.opd_visits and report.opd_visits < previous_report.opd_visits %}negative-change{% else %}neutral-change{% endif %}">
+                        {% if report.opd_visits and previous_report.opd_visits %}
+                            {% if report.opd_visits > previous_report.opd_visits %}
+                                <i class="fas fa-arrow-up"></i> +{{ report.opd_visits - previous_report.opd_visits }}
+                            {% elif report.opd_visits < previous_report.opd_visits %}
+                                <i class="fas fa-arrow-down"></i> {{ report.opd_visits - previous_report.opd_visits }}
+                            {% else %}
+                                No change
+                            {% endif %}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Deliveries</td>
+                    <td>{{ report.institutional_deliveries|default(0) }}</td>
+                    <td>{{ previous_report.institutional_deliveries|default(0) }}</td>
+                    <td class="{% if report.institutional_deliveries and previous_report.institutional_deliveries and report.institutional_deliveries > previous_report.institutional_deliveries %}positive-change{% elif report.institutional_deliveries and previous_report.institutional_deliveries and report.institutional_deliveries < previous_report.institutional_deliveries %}negative-change{% else %}neutral-change{% endif %}">
+                        {% if report.institutional_deliveries and previous_report.institutional_deliveries %}
+                            {% if report.institutional_deliveries > previous_report.institutional_deliveries %}
+                                <i class="fas fa-arrow-up"></i> +{{ report.institutional_deliveries - previous_report.institutional_deliveries }}
+                            {% elif report.institutional_deliveries < previous_report.institutional_deliveries %}
+                                <i class="fas fa-arrow-down"></i> {{ report.institutional_deliveries - previous_report.institutional_deliveries }}
+                            {% else %}
+                                No change
+                            {% endif %}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>ANC Contacts</td>
+                    <td>{{ report.anc_contacts|default(0) }}</td>
+                    <td>{{ previous_report.anc_contacts|default(0) }}</td>
+                    <td class="{% if report.anc_contacts and previous_report.anc_contacts and report.anc_contacts > previous_report.anc_contacts %}positive-change{% elif report.anc_contacts and previous_report.anc_contacts and report.anc_contacts < previous_report.anc_contacts %}negative-change{% else %}neutral-change{% endif %}">
+                        {% if report.anc_contacts and previous_report.anc_contacts %}
+                            {% if report.anc_contacts > previous_report.anc_contacts %}
+                                <i class="fas fa-arrow-up"></i> +{{ report.anc_contacts - previous_report.anc_contacts }}
+                            {% elif report.anc_contacts < previous_report.anc_contacts %}
+                                <i class="fas fa-arrow-down"></i> {{ report.anc_contacts - previous_report.anc_contacts }}
+                            {% else %}
+                                No change
+                            {% endif %}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>HIV Tested</td>
+                    <td>{{ report.hiv_tested|default(0) }}</td>
+                    <td>{{ previous_report.hiv_tested|default(0) }}</td>
+                    <td class="{% if report.hiv_tested and previous_report.hiv_tested and report.hiv_tested > previous_report.hiv_tested %}positive-change{% elif report.hiv_tested and previous_report.hiv_tested and report.hiv_tested < previous_report.hiv_tested %}negative-change{% else %}neutral-change{% endif %}">
+                        {% if report.hiv_tested and previous_report.hiv_tested %}
+                            {% if report.hiv_tested > previous_report.hiv_tested %}
+                                <i class="fas fa-arrow-up"></i> +{{ report.hiv_tested - previous_report.hiv_tested }}
+                            {% elif report.hiv_tested < previous_report.hiv_tested %}
+                                <i class="fas fa-arrow-down"></i> {{ report.hiv_tested - previous_report.hiv_tested }}
+                            {% else %}
+                                No change
+                            {% endif %}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Malaria Positive</td>
+                    <td>{{ malaria.positive|default(0) }}</td>
+                    <td>{{ previous_malaria.positive|default(0) }}</td>
+                    <td class="{% if malaria.positive and previous_malaria.positive and malaria.positive < previous_malaria.positive %}positive-change{% elif malaria.positive and previous_malaria.positive and malaria.positive > previous_malaria.positive %}negative-change{% else %}neutral-change{% endif %}">
+                        {% if malaria.positive and previous_malaria.positive %}
+                            {% if malaria.positive < previous_malaria.positive %}
+                                <i class="fas fa-arrow-down"></i> {{ malaria.positive - previous_malaria.positive }}
+                            {% elif malaria.positive > previous_malaria.positive %}
+                                <i class="fas fa-arrow-up"></i> +{{ malaria.positive - previous_malaria.positive }}
+                            {% else %}
+                                No change
+                            {% endif %}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Notes Section -->
+{% if report.notes %}
+<div class="section-card">
+    <div class="section-header">
+        <div class="section-icon">
+            <i class="fas fa-sticky-note"></i>
+        </div>
+        <h3 class="section-title">Notes</h3>
+    </div>
+    <div class="section-body">
+        <p>{{ report.notes }}</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Comments Section -->
+<div class="comments-section">
+    <h4>Comments</h4>
+    
+    {% if comments %}
+        {% for comment in comments %}
+        <div class="comment-item">
+            <div class="comment-header">
+                <span class="comment-author">{{ comment.author }}</span>
+                <span class="comment-date">{{ comment.created_at|date }}</span>
+            </div>
+            <div class="comment-text">{{ comment.text }}</div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p class="text-muted">No comments yet.</p>
+    {% endif %}
+    
+    <div class="comment-input">
+        <textarea id="comment-text" placeholder="Add a comment..."></textarea>
+        <button class="btn btn-primary" onclick="addComment()">Post Comment</button>
+    </div>
+</div>
+
+<!-- Report Navigation -->
+<div class="report-navigation">
+    {% if prev_report %}
+    <a href="{{ url_for('view_report', report_id=prev_report.id) }}" class="nav-prev">
+        <i class="fas fa-chevron-left"></i>
+        <div>
+            <div class="nav-direction">Previous</div>
+            <div class="nav-week">Week {{ prev_report.week }}, {{ prev_report.year }}</div>
+        </div>
+    </a>
+    {% else %}
+    <div class="nav-prev disabled">
+        <i class="fas fa-chevron-left"></i>
+        <div>
+            <div class="nav-direction">Previous</div>
+            <div class="nav-week">No previous report</div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if next_report %}
+    <a href="{{ url_for('view_report', report_id=next_report.id) }}" class="nav-next">
+        <div>
+            <div class="nav-direction">Next</div>
+            <div class="nav-week">Week {{ next_report.week }}, {{ next_report.year }}</div>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+    </a>
+    {% else %}
+    <div class="nav-next disabled">
+        <div>
+            <div class="nav-direction">Next</div>
+            <div class="nav-week">No next report</div>
+        </div>
+        <i class="fas fa-chevron-right"></i>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ============================================================================
+    // REPORT ACTIONS
+    // ============================================================================
+    
+    function editReport() {
+        window.location.href = '/reports/edit/{{ report.id }}';
+    }
+    
+    function exportReport() {
+        window.location.href = '/api/reports/{{ report.id }}/export';
+    }
+    
+    function printReport() {
+        window.print();
+    }
+    
+    function addComment() {
+        const commentText = document.getElementById('comment-text').value;
+        if (!commentText.trim()) {
+            showNotification('Please enter a comment', 'warning');
+            return;
+        }
+        
+        fetch('/api/reports/{{ report.id }}/comments', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN
+            },
+            body: JSON.stringify({ text: commentText })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showNotification('Comment added', 'success');
+            document.getElementById('comment-text').value = '';
+            setTimeout(() => location.reload(), 1500);
+        })
+        .catch(error => {
+            showNotification('Error adding comment', 'danger');
+        });
+    }
+    
+    // ============================================================================
+    // KEYBOARD SHORTCUTS
+    // ============================================================================
+    
+    document.addEventListener('keydown', function(e) {
+        // Left arrow - previous report
+        if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+            {% if prev_report %}
+            window.location.href = '{{ url_for('view_report', report_id=prev_report.id) }}';
+            {% endif %}
+        }
+        
+        // Right arrow - next report
+        if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+            {% if next_report %}
+            window.location.href = '{{ url_for('view_report', report_id=next_report.id) }}';
+            {% endif %}
+        }
+        
+        // E - edit report
+        if (e.key === 'e' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            editReport();
+        }
+        
+        // P - print
+        if (e.key === 'p' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            printReport();
+        }
+    });
+</script>
+{% endblock %}
